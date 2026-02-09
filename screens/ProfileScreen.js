@@ -8,19 +8,11 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
-  Switch,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { auth } from '../config/firebase';
 import { getUserData, updateUserProfile } from '../services/authService';
 import { signOut } from 'firebase/auth';
-import { 
-  requestNotificationPermissions, 
-  scheduleMealReminders, 
-  cancelAllNotifications,
-  sendTestNotification,
-  getScheduledNotifications
-} from '../services/notificationService';
 
 const GOALS = [
   { id: 'lose', label: 'Kilo Ver', icon: '📉' },
@@ -31,8 +23,6 @@ const GOALS = [
 export default function ProfileScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [scheduledCount, setScheduledCount] = useState(0);
   const [userData, setUserData] = useState({
     name: '',
     email: '',
@@ -45,16 +35,7 @@ export default function ProfileScreen({ navigation }) {
 
   useEffect(() => {
     loadUserData();
-    checkNotificationStatus();
   }, []);
-
-  const checkNotificationStatus = async () => {
-    const result = await getScheduledNotifications();
-    if (result.success) {
-      setScheduledCount(result.notifications.length);
-      setNotificationsEnabled(result.notifications.length > 0);
-    }
-  };
 
   const loadUserData = async () => {
     try {
@@ -137,47 +118,6 @@ export default function ProfileScreen({ navigation }) {
         },
       ]
     );
-  };
-
-  const handleToggleNotifications = async (value) => {
-    if (value) {
-      // Bildirimleri aç
-      const permResult = await requestNotificationPermissions();
-      
-      if (permResult.success) {
-        const scheduleResult = await scheduleMealReminders(userData.mealTimes);
-        
-        if (scheduleResult.success) {
-          setNotificationsEnabled(true);
-          await checkNotificationStatus();
-          Alert.alert('Başarılı', scheduleResult.message);
-        } else {
-          Alert.alert('Hata', 'Bildirimler ayarlanamadı');
-        }
-      } else {
-        Alert.alert('İzin Gerekli', 'Bildirimler için izin vermelisiniz');
-        setNotificationsEnabled(false);
-      }
-    } else {
-      // Bildirimleri kapat
-      const result = await cancelAllNotifications();
-      
-      if (result.success) {
-        setNotificationsEnabled(false);
-        setScheduledCount(0);
-        Alert.alert('Başarılı', 'Tüm bildirimler iptal edildi');
-      }
-    }
-  };
-
-  const handleTestNotification = async () => {
-    const result = await sendTestNotification();
-    
-    if (result.success) {
-      Alert.alert('Başarılı', 'Test bildirimi 1 saniye içinde gelecek!');
-    } else {
-      Alert.alert('Hata', 'Test bildirimi gönderilemedi');
-    }
   };
 
   if (loading) {
@@ -289,39 +229,6 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             ))}
           </View>
-        </View>
-
-        {/* Bildirim Ayarları */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bildirimler 🔔</Text>
-          
-          <View style={styles.notificationCard}>
-            <View style={styles.notificationRow}>
-              <View style={styles.notificationInfo}>
-                <Text style={styles.notificationTitle}>Öğün Hatırlatmaları</Text>
-                <Text style={styles.notificationSubtitle}>
-                  {scheduledCount > 0 
-                    ? `${scheduledCount} hatırlatma aktif` 
-                    : 'Kapalı'}
-                </Text>
-              </View>
-              <Switch
-                value={notificationsEnabled}
-                onValueChange={handleToggleNotifications}
-                trackColor={{ false: '#2a3447', true: '#4CAF50' }}
-                thumbColor={notificationsEnabled ? '#fff' : '#888'}
-              />
-            </View>
-          </View>
-
-          {notificationsEnabled && (
-            <TouchableOpacity
-              style={styles.testButton}
-              onPress={handleTestNotification}
-            >
-              <Text style={styles.testButtonText}>🧪 Test Bildirimi Gönder</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Güncelle Butonu */}
@@ -510,45 +417,5 @@ const styles = StyleSheet.create({
     color: '#ff4444',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  // Notification Styles
-  notificationCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#2a3447',
-  },
-  notificationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  notificationInfo: {
-    flex: 1,
-  },
-  notificationTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
-  },
-  notificationSubtitle: {
-    fontSize: 13,
-    color: '#888',
-  },
-  testButton: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-  },
-  testButtonText: {
-    color: '#4CAF50',
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

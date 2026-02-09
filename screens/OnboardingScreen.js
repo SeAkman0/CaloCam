@@ -14,7 +14,6 @@ import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { updateUserProfile } from '../services/authService';
 import { auth } from '../config/firebase';
-import { requestNotificationPermissions, scheduleMealReminders } from '../services/notificationService';
 
 export default function OnboardingScreen({ navigation }) {
   const [step, setStep] = useState(1);
@@ -135,18 +134,9 @@ export default function OnboardingScreen({ navigation }) {
       });
 
       if (result.success) {
-        // Bildirim izni iste ve hatırlatmaları ayarla
-        const notifResult = await requestNotificationPermissions();
-        
-        if (notifResult.success) {
-          await scheduleMealReminders(userData.mealTimes);
-        }
-
         Alert.alert(
           'Başarılı! 🎉', 
-          notifResult.success 
-            ? 'Profiliniz oluşturuldu ve öğün hatırlatmaları ayarlandı!' 
-            : 'Profiliniz oluşturuldu! (Bildirimler için izin gerekiyor)',
+          'Profiliniz oluşturuldu!',
           [
             {
               text: 'Tamam',
@@ -284,9 +274,6 @@ export default function OnboardingScreen({ navigation }) {
                     onChange={handleTimeChange}
                   />
                 )}
-                <Text style={styles.inputHint}>
-                  Bu saatlerde öğün hatırlatması alacaksınız
-                </Text>
               </View>
             )}
           </View>

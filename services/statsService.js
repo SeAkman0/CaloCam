@@ -178,7 +178,7 @@ export const getMonthlyStats = async (userId) => {
 };
 
 // Hedef başarı oranını hesapla
-export const getGoalProgress = async (userId, targetCalories) => {
+export const getGoalProgress = async (userId, targetCalories, goal = 'maintain') => {
   try {
     const result = await getWeeklyStats(userId);
     
@@ -187,11 +187,30 @@ export const getGoalProgress = async (userId, targetCalories) => {
     }
 
     let successfulDays = 0;
+    const tolerance = targetCalories * 0.1; // %10 tolerans
+    
     result.weekData.forEach(day => {
-      const difference = Math.abs(day.calories - targetCalories);
-      const tolerance = targetCalories * 0.1; // %10 tolerans
-      
-      if (difference <= tolerance) {
+      // Kalori yoksa (öğün eklenmemişse) başarısız say
+      if (day.calories === 0) {
+        return; // Bu günü say
+      }
+
+      const difference = day.calories - targetCalories;
+      let isSuccessful = false;
+
+      // Hedefe göre başarı kriteri
+      if (goal === 'lose') {
+        // Kilo vermek: hedefin altında veya hedefin %10'u kadar üstünde
+        isSuccessful = difference <= tolerance;
+      } else if (goal === 'gain') {
+        // Kilo almak: hedefin üstünde veya hedefin %10'u kadar altında
+        isSuccessful = difference >= -tolerance;
+      } else {
+        // Kilo korumak: hedefin ±%10'u içinde
+        isSuccessful = Math.abs(difference) <= tolerance;
+      }
+
+      if (isSuccessful) {
         successfulDays++;
       }
     });
@@ -203,6 +222,8 @@ export const getGoalProgress = async (userId, targetCalories) => {
       successfulDays,
       successRate,
       weekData: result.weekData,
+      goal,
+      targetCalories,
     };
   } catch (error) {
     console.error('Hedef ilerleme hatası:', error);

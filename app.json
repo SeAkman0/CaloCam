@@ -40,14 +40,6 @@
           "cameraPermission": "CaloCam'in kameraya erişmesine izin ver."
         }
       ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon.png",
-          "color": "#4CAF50",
-          "sounds": []
-        }
-      ],
       "expo-web-browser"
     ]
   }

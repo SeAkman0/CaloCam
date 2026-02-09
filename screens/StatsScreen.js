@@ -34,18 +34,22 @@ export default function StatsScreen({ navigation }) {
       const currentUser = auth.currentUser;
       if (!currentUser) return;
 
-      // Kullanıcı hedef kalorisini al
+      // Kullanıcı hedef kalorisini ve goal'ını al
       const userData = await getUserData(currentUser.uid);
+      let target = 2000;
+      let userGoal = 'maintain';
+      
       if (userData.success && userData.data) {
-        const target = calculateTargetCalories(userData.data);
+        target = calculateTargetCalories(userData.data);
+        userGoal = userData.data.goal || 'maintain';
         setTargetCalories(target);
       }
 
-      // İstatistikleri yükle
+      // İstatistikleri yükle (target ve goal'ı kullan)
       const [weekResult, monthResult, progressResult] = await Promise.all([
         getWeeklyStats(currentUser.uid),
         getMonthlyStats(currentUser.uid),
-        getGoalProgress(currentUser.uid, targetCalories),
+        getGoalProgress(currentUser.uid, target, userGoal),
       ]);
 
       if (weekResult.success) setWeeklyStats(weekResult);
