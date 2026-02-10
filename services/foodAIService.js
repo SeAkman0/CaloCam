@@ -1,7 +1,11 @@
 // AI Food Recognition Service
-// Şimdilik mock data kullanıyoruz. Gerçek API için Clarifai veya başka servis eklenebilir.
+// Gemini Pro Vision + USDA FoodData Central entegrasyonu
 
-// Mock food database - gerçek API entegrasyonu için hazır
+import { detectFoodWithGemini, imageToBase64 } from './geminiVisionService';
+import { searchFoodInUSDA, translateFoodName, calculateCaloriesForGrams } from './usdaFoodService';
+import { checkAIAPIKeys } from '../config/aiApiKeys';
+
+// Mock food database - fallback için
 const COMMON_FOODS = {
   // Kahvaltılıklar
   'bread': { name: 'Ekmek', caloriesPer100g: 265, defaultGrams: 50 },
@@ -37,49 +41,149 @@ const COMMON_FOODS = {
   'cake': { name: 'Kek', caloriesPer100g: 399, defaultGrams: 50 },
 };
 
-// Mock AI analizi - gerçek AI API buraya entegre edilecek
+/**
+ * Ana AI analiz fonksiyonu - Gemini Pro Vision + USDA FoodData
+ * @param {string} imageUri - Resim URI'si
+ * @returns {Promise<Object>} - Tespit edilen yemekler
+ */
 export const analyzeFoodImage = async (imageUri) => {
   try {
-    // Simülasyon için bekleme
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Mock sonuç - Gerçek AI API entegrasyonu için burası değiştirilecek
-    // Rastgele 1-4 yiyecek seç
-    const foodKeys = Object.keys(COMMON_FOODS);
-    const numFoods = Math.floor(Math.random() * 3) + 1; // 1-3 yiyecek
-    const selectedFoods = [];
-
-    for (let i = 0; i < numFoods; i++) {
-      const randomFood = foodKeys[Math.floor(Math.random() * foodKeys.length)];
-      const food = COMMON_FOODS[randomFood];
-      
-      selectedFoods.push({
-        id: `food_${Date.now()}_${i}`,
-        name: food.name,
-        portion: `${food.defaultGrams}g`,
-        grams: food.defaultGrams,
-        caloriesPer100g: food.caloriesPer100g,
-        calories: Math.round((food.caloriesPer100g * food.defaultGrams) / 100),
-        confidence: (Math.random() * 0.3 + 0.7).toFixed(2), // 0.70-1.00 arası
-      });
+    console.log('🔍 Resim analizi başlıyor...');
+    
+    // API key'leri kontrol et
+    const hasAPIKeys = checkAIAPIKeys();
+    
+    if (!hasAPIKeys) {
+      return {
+        success: false,
+        error: 'API anahtarları eksik. Lütfen config/aiApiKeys.js dosyasını doldurun.',
+        foods: [],
+      };
     }
+
+    // 1. Resmi base64'e çevir
+    console.log('📸 Resim base64\'e çevriliyor...');
+    const base64Image = await imageToBase64(imageUri);
+
+    // 2. Gemini Pro Vision ile yemek tespiti
+    console.log('🤖 Gemini Pro Vision analizi yapılıyor...');
+    const geminiResult = await detectFoodWithGemini(base64Image);
+
+    if (!geminiResult.success) {
+      return {
+        success: false,
+        error: `Gemini Vision hatası: ${geminiResult.error || 'Analiz edilemedi'}`,
+        foods: [],
+      };
+    }
+
+    console.log(`✅ Gemini ${geminiResult.foods.length} yemek tespit etti`);
+
+    // 3. Her yemek için USDA'dan kalori bilgisi al
+    console.log('🍽️ USDA\'dan kalori bilgileri alınıyor...');
+    const detectedFoods = [];
+    
+    for (const geminiFood of geminiResult.foods) {
+      try {
+        // Yemek adını İngilizce'ye çevir
+        const englishName = translateFoodName(geminiFood.name);
+        console.log(`  - "${geminiFood.name}" → "${englishName}" aranıyor...`);
+        
+        const usdaResult = await searchFoodInUSDA(englishName);
+        
+        if (usdaResult.success) {
+          const food = usdaResult.food;
+          const calories = calculateCaloriesForGrams(food.calories, geminiFood.grams);
+          
+          detectedFoods.push({
+            id: geminiFood.id,
+            name: geminiFood.name, // Türkçe adı kullan
+            portion: `${geminiFood.grams}g`,
+            grams: geminiFood.grams,
+            caloriesPer100g: Math.round(food.calories),
+            calories,
+            protein: Math.round((food.protein * geminiFood.grams) / 100),
+            carbs: Math.round((food.carbs * geminiFood.grams) / 100),
+            fat: Math.round((food.fat * geminiFood.grams) / 100),
+            confidence: geminiFood.confidence,
+            source: 'gemini+usda',
+          });
+          
+          console.log(`    ✓ ${geminiFood.name}: ${calories} kcal`);
+        } else {
+          // USDA'da bulunamadı, local database dene
+          console.log(`    ⚠️ USDA'da bulunamadı, local database deneniyor...`);
+          const localFood = findLocalFood(geminiFood.name);
+          if (localFood) {
+            detectedFoods.push({
+              id: geminiFood.id,
+              name: geminiFood.name,
+              portion: `${geminiFood.grams}g`,
+              grams: geminiFood.grams,
+              caloriesPer100g: localFood.caloriesPer100g,
+              calories: Math.round((localFood.caloriesPer100g * geminiFood.grams) / 100),
+              confidence: geminiFood.confidence,
+              source: 'gemini+local',
+            });
+            console.log(`    ✓ Local'de bulundu`);
+          }
+        }
+      } catch (error) {
+        console.warn(`USDA'da "${geminiFood.name}" bulunamadı:`, error.message);
+      }
+    }
+
+    // Eğer hiç yemek tespit edilemedi ise hata döndür
+    if (detectedFoods.length === 0) {
+      console.warn('⚠️ Hiç yemek tespit edilemedi');
+      return {
+        success: false,
+        error: 'Resimde yemek tespit edilemedi. Lütfen daha net bir fotoğraf çekin.',
+        foods: [],
+      };
+    }
+
+    console.log(`🎉 ${detectedFoods.length} yemek başarıyla analiz edildi!`);
 
     return {
       success: true,
-      foods: selectedFoods,
-      message: 'Yiyecekler tespit edildi! Gramaj ve kaloriyi düzenleyebilirsin.',
+      foods: detectedFoods,
+      message: `${detectedFoods.length} yemek tespit edildi! Gramaj ve kaloriyi düzenleyebilirsin.`,
+      geminiRawText: geminiResult.rawText,
     };
   } catch (error) {
-    console.error('AI analiz hatası:', error);
+    console.error('❌ AI analiz hatası:', error);
+    
     return {
       success: false,
-      error: 'Görüntü analiz edilemedi',
+      error: `Analiz hatası: ${error.message}`,
       foods: [],
     };
   }
 };
 
-// Manuel yemek arama fonksiyonu
+/**
+ * Local database'den yemek bul (fallback için)
+ */
+const findLocalFood = (foodName) => {
+  const lowerName = foodName.toLowerCase();
+  
+  for (const [key, food] of Object.entries(COMMON_FOODS)) {
+    if (
+      food.name.toLowerCase().includes(lowerName) ||
+      lowerName.includes(food.name.toLowerCase()) ||
+      key.includes(lowerName)
+    ) {
+      return food;
+    }
+  }
+  
+  return null;
+};
+
+/**
+ * Manuel yemek arama fonksiyonu
+ */
 export const searchFood = (query) => {
   const results = [];
   const lowerQuery = query.toLowerCase();
@@ -98,23 +202,33 @@ export const searchFood = (query) => {
   return results;
 };
 
-// Kalori hesaplama yardımcı fonksiyonu
+/**
+ * Kalori hesaplama yardımcı fonksiyonu
+ */
 export const calculateCalories = (caloriesPer100g, grams) => {
   return Math.round((caloriesPer100g * grams) / 100);
 };
 
 /* 
-  GERÇEK AI API ENTEGRASYONU İÇİN:
+  ✅ KULLANILAN AI SİSTEMİ:
   
-  1. Clarifai (Ücretsiz 5000 request/ay):
-     - https://www.clarifai.com/models/food-item-recognition
+  1. Google Gemini Pro Vision:
+     - Resimden yemek tespiti + gramaj tahmini
+     - Ücretsiz: Sınırsız (fair use policy)
+     - Setup: https://makersuite.google.com/app/apikey
      
-  2. Edamam Food Database API (Ücretsiz):
-     - https://developer.edamam.com/food-database-api
+  2. USDA FoodData Central:
+     - Yemek besin değerleri (kalori, protein, karbonhidrat, yağ)
+     - Tamamen ücretsiz
+     - Setup: https://fdc.nal.usda.gov/api-key-signup.html
      
-  3. Nutritionix API (Limitli ücretsiz):
-     - https://www.nutritionix.com/business/api
+  3. Local Database (Fallback):
+     - API hata verirse veya key yoksa kullanılır
+     - Türkçe yemek desteği
      
-  4. Google Cloud Vision API (Limitli ücretsiz):
-     - https://cloud.google.com/vision
+  KURULUM:
+  1. config/aiApiKeys.js dosyasını doldurun
+  2. Gemini API key alın (ücretsiz)
+  3. USDA API key alın (ücretsiz)
+  4. .gitignore'a config/aiApiKeys.js ekleyin
 */

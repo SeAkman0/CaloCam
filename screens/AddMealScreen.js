@@ -119,10 +119,13 @@ export default function AddMealScreen({ navigation }) {
         setFoodItems(newFoodItems);
         Alert.alert('Başarılı! 🎉', result.message);
       } else {
-        Alert.alert('Uyarı', 'Yiyecek tespit edilemedi. Manuel olarak ekleyebilirsin.');
+        // Hata mesajını göster
+        const errorMessage = result.error || 'Yiyecek tespit edilemedi. Manuel olarak ekleyebilirsin.';
+        Alert.alert('❌ Analiz Başarısız', errorMessage);
       }
     } catch (error) {
-      Alert.alert('Hata', 'Görüntü analiz edilemedi');
+      console.error('Analiz hatası:', error);
+      Alert.alert('❌ Hata', `Görüntü analiz edilemedi: ${error.message}`);
     } finally {
       setAnalyzing(false);
     }
