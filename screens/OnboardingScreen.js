@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -88,17 +89,19 @@ export default function OnboardingScreen({ navigation }) {
   };
 
   const nextStep = () => {
-    // Validasyon
-    if (step === 1 && (!userData.gender || !userData.height || !userData.weight || !userData.birthDate)) {
-      console.log('⚠️ Step 1 validasyon hatası - eksik alanlar var');
+    const h = (userData.height || '').trim();
+    const w = (userData.weight || '').trim();
+    const b = (userData.birthDate || '').trim();
+    if (step === 1 && (!userData.gender || !h || !w || !b)) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen cinsiyet, boy, kilo ve doğum tarihi alanlarını doldurun. Boş bırakamazsınız.');
       return;
     }
     if (step === 2 && (!userData.mealsPerDay || userData.mealTimes.length === 0)) {
-      console.log('⚠️ Step 2 validasyon hatası - öğün sayısı seçilmedi');
+      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen günlük öğün sayısını seçin.');
       return;
     }
     if (step === 3 && !userData.goal) {
-      console.log('⚠️ Step 3 validasyon hatası - hedef seçilmedi');
+      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen bir hedef seçin (kilo ver, koru veya kilo al).');
       return;
     }
 

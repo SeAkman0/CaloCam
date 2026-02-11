@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { auth } from '../config/firebase';
@@ -47,8 +48,12 @@ export default function ExerciseScreen({ navigation }) {
   const previewBurned = value ? calculateBurnedCalories(selectedTypeId, value) : 0;
 
   const handleAdd = async () => {
-    const num = parseInt(value, 10);
-    if (isNaN(num) || num <= 0) return;
+    const valueTrim = (value || '').trim();
+    const num = parseInt(valueTrim, 10);
+    if (!valueTrim || isNaN(num) || num <= 0) {
+      Alert.alert('Girdinizi Kontrol Edin', `${selectedType?.unitLabel || 'Miktar'} alanına geçerli bir sayı girin (1 ve üzeri). Boş bırakamazsınız.`);
+      return;
+    }
     const user = auth.currentUser;
     if (!user || saving) return;
     setSaving(true);

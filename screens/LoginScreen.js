@@ -53,13 +53,15 @@ export default function LoginScreen({ navigation }) {
   }, [response]);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
+    const emailTrim = (email || '').trim();
+    const passwordTrim = (password || '').trim();
+    if (!emailTrim || !passwordTrim) {
+      Alert.alert('Girdinizi Kontrol Edin', 'E-posta ve şifre alanlarını doldurun. Boş bırakamazsınız.');
       return;
     }
 
     setLoading(true);
-    const result = await signInWithEmail(email, password);
+    const result = await signInWithEmail(emailTrim, passwordTrim);
     setLoading(false);
 
     if (result.success) {

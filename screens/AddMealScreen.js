@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Alert,
+  Animated,
+  Easing,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
@@ -35,22 +38,54 @@ export default function AddMealScreen({ navigation }) {
   ]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [showImageOptions, setShowImageOptions] = useState(false);
+  const [highlightInvalidId, setHighlightInvalidId] = useState(null);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  const getFirstInvalidItemId = () => {
+    const inv = foodItems.find(item => {
+      const nameOk = (item.name || '').trim();
+      const cal = (item.calories || '').trim();
+      const calNum = parseInt(cal, 10);
+      return !nameOk || !cal || isNaN(calNum);
+    });
+    return inv ? inv.id : null;
+  };
+
+  const runShakeAndHighlight = (invalidId) => {
+    setHighlightInvalidId(invalidId);
+    shakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 1, duration: 60, useNativeDriver: true, easing: Easing.linear }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true, easing: Easing.linear }),
+      Animated.timing(shakeAnim, { toValue: 1, duration: 60, useNativeDriver: true, easing: Easing.linear }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true, easing: Easing.linear }),
+    ]).start(() => {
+      setTimeout(() => setHighlightInvalidId(null), 2000);
+    });
+  };
 
   const addFoodItem = () => {
+    const firstInvalidId = getFirstInvalidItemId();
+    if (firstInvalidId) {
+      runShakeAndHighlight(firstInvalidId);
+      return;
+    }
     const newId = String(Date.now());
     setFoodItems([...foodItems, { id: newId, name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false }]);
   };
 
   const removeFoodItem = (id) => {
     if (foodItems.length === 1) {
-      console.log('⚠️ En az bir yiyecek eklemelisiniz');
+      Alert.alert('Girdinizi Kontrol Edin', 'En az bir yiyecek kalmalıdır. Öğünü kaydetmek istemiyorsanız geri dönün.');
       return;
     }
     setFoodItems(foodItems.filter(item => item.id !== id));
-    console.log('🗑️ Yiyecek silindi');
   };
 
   const updateFoodItem = (id, field, value) => {
+    if ((field === 'name' || field === 'calories') && id === highlightInvalidId) {
+      setHighlightInvalidId(null);
+    }
     setFoodItems(foodItems.map(item => 
       item.id === id ? { ...item, [field]: value } : item
     ));
@@ -59,20 +94,21 @@ export default function AddMealScreen({ navigation }) {
   const queryFoodNutrients = async (itemId) => {
     const item = foodItems.find(f => f.id === itemId);
     
-    if (!item.name) {
-      console.log('⚠️ Yiyecek adı girilmedi');
+    const nameStr = (item.name || '').trim();
+    const portionStr = (item.portion || '').trim();
+    if (!nameStr) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Bu yiyecek için ad girin, ardından "Besin Değerlerini Sorgula"ya basın. Boş bırakamazsınız.');
       return;
     }
 
-    if (!item.portion) {
-      console.log('⚠️ Gramaj bilgisi girilmedi');
+    if (!portionStr) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Gramaj (porsiyon) girin. Örn: 100. Boş bırakamazsınız.');
       return;
     }
 
-    // Gramajı parse et
-    const gramsMatch = item.portion.match(/(\d+)/);
+    const gramsMatch = portionStr.match(/(\d+)/);
     if (!gramsMatch) {
-      console.log('⚠️ Geçersiz gramaj formatı:', item.portion);
+      Alert.alert('Girdinizi Kontrol Edin', 'Gramaj sadece rakam olmalıdır. Örn: 100');
       return;
     }
     const grams = parseInt(gramsMatch[1]);
@@ -265,18 +301,25 @@ export default function AddMealScreen({ navigation }) {
   };
 
   const handleSaveMeal = async () => {
-    // Validasyon
-    const validItems = foodItems.filter(item => item.name && item.calories);
-    
-    if (validItems.length === 0) {
-      console.log('⚠️ En az bir yiyecek ekleyip ismini ve kalorisini girin');
+    const validItems = foodItems.filter(item => (item.name || '').trim() && (item.calories || '').trim());
+    const firstInvalidId = getFirstInvalidItemId();
+
+    if (validItems.length === 0 || firstInvalidId) {
+      if (firstInvalidId) {
+        runShakeAndHighlight(firstInvalidId);
+      } else {
+        Alert.alert('Girdinizi Kontrol Edin', 'En az bir yiyecek ekleyin; her biri için yiyecek adı ve kalori (kcal) girin. Boş bırakamazsınız.');
+      }
       return;
     }
 
-    // Tüm itemların kalori bilgisi var mı kontrol et
-    const hasEmptyCalories = validItems.some(item => !item.calories || isNaN(item.calories));
+    const hasEmptyCalories = validItems.some(item => {
+      const cal = (item.calories || '').trim();
+      return !cal || isNaN(parseInt(cal, 10));
+    });
     if (hasEmptyCalories) {
-      console.log('⚠️ Lütfen tüm yiyeceklerin kalori bilgisini girin');
+      if (firstInvalidId) runShakeAndHighlight(firstInvalidId);
+      else Alert.alert('Girdinizi Kontrol Edin', 'Tüm yiyeceklerin kalori bilgisi girilmiş olmalı. Eksik veya boş bırakılamaz.');
       return;
     }
 
@@ -376,7 +419,7 @@ export default function AddMealScreen({ navigation }) {
           )}
           
           <Text style={styles.inputHint}>
-            AI tabaktaki her yiyeceği ayrı ayrı tespit edip besin değerlerini getirecek (sucuk+yumurta gibi)
+            AI tabaktaki her yiyeceği ayrı ayrı tespit edip besin değerlerini getirecek.
           </Text>
         </View>
 
@@ -417,8 +460,27 @@ export default function AddMealScreen({ navigation }) {
             )}
           </View>
 
-          {foodItems.map((item, index) => (
-            <View key={item.id} style={styles.foodItemCard}>
+          {foodItems.map((item, index) => {
+            const isHighlighted = item.id === highlightInvalidId;
+            const cardStyle = [
+              styles.foodItemCard,
+              isHighlighted && styles.foodItemCardInvalid,
+            ];
+            const animatedStyle = isHighlighted ? {
+              transform: [{
+                translateX: shakeAnim.interpolate({
+                  inputRange: [0, 0.25, 0.5, 0.75, 1],
+                  outputRange: [0, -8, 8, -8, 0],
+                }),
+              }],
+            } : {};
+            return (
+            <Animated.View key={item.id} style={[cardStyle, animatedStyle]}>
+              {isHighlighted && (
+                <View style={styles.fillFirstHint}>
+                  <Text style={styles.fillFirstHintText}>⬇ Önce bu yiyeceği doldurun</Text>
+                </View>
+              )}
               <View style={styles.foodItemHeader}>
                 <Text style={styles.foodItemNumber}>#{index + 1}</Text>
                 {foodItems.length > 1 && (
@@ -529,8 +591,9 @@ export default function AddMealScreen({ navigation }) {
                   />
                 </View>
               </View>
-            </View>
-          ))}
+            </Animated.View>
+          );
+          })}
 
           {/* Yiyecek Ekle Butonu */}
           <TouchableOpacity
@@ -546,7 +609,7 @@ export default function AddMealScreen({ navigation }) {
         <View style={styles.infoCard}>
           <Text style={styles.infoIcon}>💡</Text>
           <Text style={styles.infoText}>
-            📸 Fotoğraftan AI her yiyeceği AYRI AYRI tespit eder (örn: sucuk + yumurta). 
+            📸 Fotoğraftan AI her yiyeceği AYRI AYRI tespit eder. 
             {'\n'}🔍 Manuel girişte yiyecek adı ve gramajını gir, "Sorgula" butonuna bas! 
             {'\n'}✅ Toplam kalori otomatik hesaplanır, istersen manuel düzenle.
           </Text>
@@ -734,6 +797,23 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#2a3447',
+  },
+  foodItemCardInvalid: {
+    borderColor: '#ef4444',
+    borderWidth: 2,
+  },
+  fillFirstHint: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  fillFirstHintText: {
+    fontSize: 13,
+    color: '#fca5a5',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   foodItemHeader: {
     flexDirection: 'row',

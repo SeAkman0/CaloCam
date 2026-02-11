@@ -54,23 +54,27 @@ export default function SignupScreen({ navigation }) {
   }, [response]);
 
   const handleSignup = async () => {
-    if (!name || !email || !password || !confirmPassword) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
+    const nameTrim = (name || '').trim();
+    const emailTrim = (email || '').trim();
+    const passwordTrim = (password || '').trim();
+    const confirmTrim = (confirmPassword || '').trim();
+    if (!nameTrim || !emailTrim || !passwordTrim || !confirmTrim) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Ad, e-posta, şifre ve şifre tekrarı alanlarını doldurun. Boş bırakamazsınız.');
       return;
     }
 
-    if (password !== confirmPassword) {
-      Alert.alert('Hata', 'Şifreler eşleşmiyor!');
+    if (passwordTrim !== confirmTrim) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Şifre ve şifre tekrarı aynı olmalıdır.');
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Hata', 'Şifre en az 6 karakter olmalıdır');
+    if (passwordTrim.length < 6) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Şifre en az 6 karakter olmalıdır.');
       return;
     }
 
     setLoading(true);
-    const result = await signUpWithEmail(email, password, name);
+    const result = await signUpWithEmail(emailTrim, passwordTrim, nameTrim);
     setLoading(false);
 
     if (result.success) {

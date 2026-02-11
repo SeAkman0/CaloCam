@@ -217,6 +217,8 @@ export default function DashboardScreen({ navigation }) {
     return `${hours}:${minutes}`;
   };
 
+  const MEAL_ORDER = { breakfast: 0, lunch: 1, dinner: 2, snack: 3 };
+
   const getMealTypeLabel = (mealType) => {
     const types = {
       breakfast: '🌅 Kahvaltı',
@@ -226,6 +228,12 @@ export default function DashboardScreen({ navigation }) {
     };
     return types[mealType] || '🍽️ Öğün';
   };
+
+  const sortedTodayMeals = [...(todayMeals || [])].sort((a, b) => {
+    const orderA = MEAL_ORDER[a.mealType] ?? 99;
+    const orderB = MEAL_ORDER[b.mealType] ?? 99;
+    return orderA - orderB;
+  });
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -383,7 +391,7 @@ export default function DashboardScreen({ navigation }) {
               </Text>
             </View>
           ) : (
-            todayMeals.map((meal) => (
+            sortedTodayMeals.map((meal) => (
               <TouchableOpacity 
                 key={meal.id} 
                 style={styles.mealCard}
@@ -396,8 +404,8 @@ export default function DashboardScreen({ navigation }) {
                     <Text style={styles.mealTime}>{formatMealTime(meal.date)}</Text>
                   </View>
                   
-                  {/* Yiyecek listesi */}
-                  {meal.items && meal.items.map((item, index) => (
+                  {/* Yiyecek listesi — en fazla 3 madde, fazlası "..." */}
+                  {meal.items && meal.items.slice(0, 3).map((item, index) => (
                     <View key={index} style={styles.mealItemRow}>
                       <Text style={styles.mealItemName}>
                         • {item.name}
@@ -406,6 +414,11 @@ export default function DashboardScreen({ navigation }) {
                       <Text style={styles.mealItemCalories}>{item.calories} kcal</Text>
                     </View>
                   ))}
+                  {meal.items && meal.items.length > 3 && (
+                    <View style={styles.mealItemRow}>
+                      <Text style={styles.mealItemMore}>... ve {meal.items.length - 3} madde daha</Text>
+                    </View>
+                  )}
                 </View>
                 <View style={styles.mealTotalCalories}>
                   <Text style={styles.mealTotalLabel}>Toplam</Text>
@@ -775,6 +788,11 @@ const styles = StyleSheet.create({
   mealPortion: {
     fontSize: 12,
     color: '#888',
+  },
+  mealItemMore: {
+    fontSize: 13,
+    color: '#9ca3af',
+    fontStyle: 'italic',
   },
   mealItemCalories: {
     fontSize: 13,

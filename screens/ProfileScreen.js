@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -79,18 +80,21 @@ export default function ProfileScreen({ navigation }) {
   };
 
   const handleUpdate = async () => {
-    if (!userData.gender || !userData.height || !userData.weight || !userData.birthDate) {
-      console.log('⚠️ Lütfen tüm alanları doldurun');
+    const heightStr = (userData.height || '').trim();
+    const weightStr = (userData.weight || '').trim();
+    const birthStr = (userData.birthDate || '').trim();
+    if (!userData.gender || !heightStr || !weightStr || !birthStr) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen cinsiyet, boy, kilo ve doğum tarihi alanlarını doldurun. Boş bırakamazsınız.');
       return;
     }
-    const heightNum = parseFloat(userData.height);
-    const weightNum = parseFloat(userData.weight);
+    const heightNum = parseFloat(heightStr);
+    const weightNum = parseFloat(weightStr);
     if (isNaN(heightNum) || heightNum < 100 || heightNum > 250) {
-      console.log('⚠️ Boy 100-250 cm arasında olmalı');
+      Alert.alert('Girdinizi Kontrol Edin', 'Boy 100–250 cm arasında olmalıdır. Lütfen geçerli bir değer girin.');
       return;
     }
     if (isNaN(weightNum) || weightNum < 30 || weightNum > 300) {
-      console.log('⚠️ Kilo 30-300 kg arasında olmalı');
+      Alert.alert('Girdinizi Kontrol Edin', 'Kilo 30–300 kg arasında olmalıdır. Lütfen geçerli bir değer girin.');
       return;
     }
 
