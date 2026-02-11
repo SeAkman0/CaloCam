@@ -1,4 +1,4 @@
-import { collection, addDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 // Öğün ekle
@@ -82,5 +82,19 @@ export const getTodayTotalCalories = async (userId) => {
   } catch (error) {
     console.error('Kalori hesaplama hatası:', error);
     return { success: false, totalCalories: 0 };
+  }
+};
+
+// Öğün sil
+export const deleteMeal = async (mealId) => {
+  try {
+    const mealRef = doc(db, 'meals', mealId);
+    await deleteDoc(mealRef);
+    
+    console.log(`🗑️ Öğün silindi: ${mealId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Öğün silme hatası:', error);
+    return { success: false, error: error.message };
   }
 };

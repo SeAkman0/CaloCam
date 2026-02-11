@@ -6,11 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { getUserData } from '../services/authService';
 import { getTodayMeals, getTodayTotalCalories } from '../services/mealService';
+import { getTodayWaterIntake, addWaterIntake, calculateDailyWaterGoal, QUICK_ADD_AMOUNTS } from '../services/waterService';
+import { getTodayBurnedCalories } from '../services/exerciseService';
 import { auth } from '../config/firebase';
 
 export default function DashboardScreen({ navigation }) {
@@ -18,18 +19,26 @@ export default function DashboardScreen({ navigation }) {
   const [userData, setUserData] = useState(null);
   const [dailyCalories, setDailyCalories] = useState(0);
   const [targetCalories, setTargetCalories] = useState(2000);
+  const [burnedCalories, setBurnedCalories] = useState(0);
   const [todayMeals, setTodayMeals] = useState([]);
+  const [waterIntake, setWaterIntake] = useState(0);
+  const [waterGoal, setWaterGoal] = useState(2500);
+  const [addingWater, setAddingWater] = useState(false);
 
   useEffect(() => {
     loadUserData();
     loadTodayMeals();
-    
-    // Screen'e her focus olduğunda verileri yenile
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadUserData(); // Profil güncellendiğinde hedef kalori de güncellenir
-      loadTodayMeals();
-    });
+    loadTodayWater();
+    loadTodayBurned();
+  }, []);
 
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadUserData();
+      loadTodayMeals();
+      loadTodayWater();
+      loadTodayBurned();
+    });
     return unsubscribe;
   }, []);
 
@@ -37,7 +46,7 @@ export default function DashboardScreen({ navigation }) {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) {
-        Alert.alert('Hata', 'Kullanıcı oturumu bulunamadı');
+        console.log('❌ Kullanıcı oturumu bulunamadı');
         navigation.navigate('Login');
         return;
       }
@@ -46,12 +55,13 @@ export default function DashboardScreen({ navigation }) {
       if (result.success) {
         setUserData(result.data);
         calculateTargetCalories(result.data);
+        calculateWaterGoal(result.data);
+        console.log('✅ Kullanıcı verileri yüklendi');
       } else {
-        Alert.alert('Hata', 'Kullanıcı verileri yüklenemedi');
+        console.log('❌ Kullanıcı verileri yüklenemedi');
       }
     } catch (error) {
-      console.error('Veri yükleme hatası:', error);
-      Alert.alert('Hata', 'Bir hata oluştu');
+      console.error('❌ Veri yükleme hatası:', error);
     } finally {
       setLoading(false);
     }
@@ -78,6 +88,71 @@ export default function DashboardScreen({ navigation }) {
     } catch (error) {
       console.error('Öğün yükleme hatası:', error);
       setDailyCalories(0); // Hata durumunda 0 göster
+    }
+  };
+
+  const loadTodayWater = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const result = await getTodayWaterIntake(currentUser.uid);
+      if (result.success) {
+        setWaterIntake(result.totalWater || 0);
+      } else {
+        setWaterIntake(0);
+      }
+    } catch (error) {
+      console.error('❌ Su verisi yükleme hatası:', error);
+      setWaterIntake(0);
+    }
+  };
+
+  const loadTodayBurned = async () => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+      const result = await getTodayBurnedCalories(currentUser.uid);
+      if (result.success) setBurnedCalories(result.totalBurned || 0);
+      else setBurnedCalories(0);
+    } catch (error) {
+      console.error('❌ Yakılan kalori yükleme hatası:', error);
+      setBurnedCalories(0);
+    }
+  };
+
+  const calculateWaterGoal = (data) => {
+    if (!data || !data.weight || !data.birthDate || !data.gender) {
+      setWaterGoal(2500); // Varsayılan değer
+      return;
+    }
+
+    const age = calculateAge(data.birthDate);
+    const weight = parseFloat(data.weight) || 70;
+    const height = parseFloat(data.height) || 170;
+    const gender = data.gender || 'male';
+
+    const goal = calculateDailyWaterGoal(weight, height, age, gender);
+    setWaterGoal(goal);
+  };
+
+  const handleQuickAddWater = async (amount) => {
+    if (addingWater) return;
+    
+    setAddingWater(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      const result = await addWaterIntake(currentUser.uid, amount);
+      if (result.success) {
+        setWaterIntake(waterIntake + amount);
+        console.log(`✅ ${amount}ml su eklendi`);
+      }
+    } catch (error) {
+      console.error('❌ Su ekleme hatası:', error);
+    } finally {
+      setAddingWater(false);
     }
   };
 
@@ -159,9 +234,11 @@ export default function DashboardScreen({ navigation }) {
     return 'İyi akşamlar';
   };
 
+  const netCalories = dailyCalories - burnedCalories;
   const getProgress = () => {
-    return targetCalories > 0 ? (dailyCalories / targetCalories) * 100 : 0;
+    return targetCalories > 0 ? Math.min((netCalories / targetCalories) * 100, 100) : 0;
   };
+  const remaining = targetCalories - netCalories;
 
   if (loading) {
     return (
@@ -195,12 +272,21 @@ export default function DashboardScreen({ navigation }) {
         {/* Kalori Kartı */}
         <View style={styles.calorieCard}>
           <Text style={styles.calorieLabel}>Günlük Kalori</Text>
-          <View style={styles.calorieInfo}>
-            <Text style={styles.currentCalories}>{dailyCalories}</Text>
-            <Text style={styles.calorieSlash}>/</Text>
-            <Text style={styles.targetCalories}>{targetCalories}</Text>
+          <View style={styles.calorieSummary}>
+            <View style={styles.calorieRow}>
+              <Text style={styles.calorieRowLabel}>Aldığın</Text>
+              <Text style={styles.currentCalories}>{dailyCalories} kcal</Text>
+            </View>
+            <View style={styles.calorieRow}>
+              <Text style={styles.calorieRowLabel}>Yaktığın</Text>
+              <Text style={styles.burnedCalories}>-{burnedCalories} kcal</Text>
+            </View>
+            <View style={[styles.calorieRow, styles.calorieRowNet]}>
+              <Text style={styles.calorieRowLabel}>Net (sende kalan)</Text>
+              <Text style={styles.netCalories}>{netCalories} kcal</Text>
+            </View>
           </View>
-          <Text style={styles.calorieSubtext}>kcal</Text>
+          <Text style={styles.calorieSubtext}>Hedef: {targetCalories} kcal</Text>
 
           {/* Progress Bar */}
           <View style={styles.progressBarContainer}>
@@ -208,7 +294,7 @@ export default function DashboardScreen({ navigation }) {
               <View 
                 style={[
                   styles.progressBarFill, 
-                  { width: `${Math.min(getProgress(), 100)}%` }
+                  { width: `${Math.max(0, Math.min(getProgress(), 100))}%` }
                 ]} 
               />
             </View>
@@ -219,11 +305,59 @@ export default function DashboardScreen({ navigation }) {
 
           {/* Kalan Kalori */}
           <View style={styles.remainingContainer}>
-            <Text style={styles.remainingText}>
-              {targetCalories - dailyCalories > 0 
-                ? `${targetCalories - dailyCalories} kcal kaldı` 
-                : 'Hedefe ulaşıldı! 🎉'}
+            <Text style={[styles.remainingText, remaining < 0 && styles.remainingTextReached]}>
+              {remaining > 0 
+                ? `${remaining} kcal kaldı` 
+                : remaining < 0 
+                  ? `${Math.abs(remaining)} kcal fazla`
+                  : 'Hedefe ulaşıldı! 🎉'}
             </Text>
+          </View>
+        </View>
+
+        {/* Su Takip Kartı */}
+        <View style={styles.waterCard}>
+          <View style={styles.waterHeader}>
+            <Text style={styles.waterLabel}>💧 Günlük Su Tüketimi</Text>
+            <Text style={styles.waterGoalText}>
+              Hedef: {waterGoal}ml ({(waterGoal/1000).toFixed(1)}L)
+            </Text>
+          </View>
+
+          {/* Progress Bar */}
+          <View style={styles.waterProgressRow}>
+            <View style={styles.waterProgressContainer}>
+              <View style={styles.waterProgressBg}>
+                <View 
+                  style={[
+                    styles.waterProgressFill, 
+                    { width: `${Math.min((waterIntake / waterGoal) * 100, 100)}%` }
+                  ]} 
+                />
+              </View>
+              <View style={styles.waterStatsRow}>
+                <Text style={styles.waterCurrentText}>{waterIntake}ml</Text>
+                <Text style={styles.waterPercentText}>
+                  {Math.round((waterIntake / waterGoal) * 100)}%
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Hızlı Ekle Butonları */}
+          <View style={styles.quickAddContainer}>
+            {QUICK_ADD_AMOUNTS.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.quickAddButton}
+                onPress={() => handleQuickAddWater(item.amount)}
+                disabled={addingWater}
+              >
+                <Text style={styles.quickAddIcon}>{item.icon}</Text>
+                <Text style={styles.quickAddLabel}>{item.label}</Text>
+                <Text style={styles.quickAddAmount}>{item.amount}ml</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -250,7 +384,12 @@ export default function DashboardScreen({ navigation }) {
             </View>
           ) : (
             todayMeals.map((meal) => (
-              <View key={meal.id} style={styles.mealCard}>
+              <TouchableOpacity 
+                key={meal.id} 
+                style={styles.mealCard}
+                onPress={() => navigation.navigate('MealDetail', { meal })}
+                activeOpacity={0.7}
+              >
                 <View style={styles.mealInfo}>
                   <View style={styles.mealHeader}>
                     <Text style={styles.mealType}>{getMealTypeLabel(meal.mealType)}</Text>
@@ -272,7 +411,7 @@ export default function DashboardScreen({ navigation }) {
                   <Text style={styles.mealTotalLabel}>Toplam</Text>
                   <Text style={styles.mealCalories}>{meal.totalCalories} kcal</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </View>
@@ -380,31 +519,45 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
   },
-  calorieInfo: {
+  calorieSummary: {
+    marginBottom: 8,
+  },
+  calorieRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'baseline',
-    marginBottom: 4,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  calorieRowNet: {
+    borderTopWidth: 1,
+    borderTopColor: '#2a3447',
+    marginTop: 4,
+    paddingTop: 10,
+  },
+  calorieRowLabel: {
+    fontSize: 14,
+    color: '#b4b4b4',
   },
   currentCalories: {
-    fontSize: 48,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '600',
     color: '#4CAF50',
   },
-  calorieSlash: {
-    fontSize: 32,
-    color: '#b4b4b4',
-    marginHorizontal: 8,
+  burnedCalories: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#ef4444',
   },
-  targetCalories: {
-    fontSize: 32,
+  netCalories: {
+    fontSize: 18,
+    fontWeight: '700',
     color: '#fff',
   },
   calorieSubtext: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#b4b4b4',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   progressBarContainer: {
     marginBottom: 16,
@@ -434,6 +587,9 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontWeight: '600',
   },
+  remainingTextReached: {
+    color: '#ef4444',
+  },
   addMealButton: {
     backgroundColor: '#4CAF50',
     borderRadius: 16,
@@ -456,6 +612,88 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  waterCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  waterHeader: {
+    marginBottom: 16,
+  },
+  waterLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4FC3F7',
+    marginBottom: 4,
+  },
+  waterGoalText: {
+    fontSize: 12,
+    color: '#b4b4b4',
+  },
+  waterProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  waterProgressContainer: {
+    flex: 1,
+  },
+  waterProgressBg: {
+    height: 12,
+    backgroundColor: '#2a3447',
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  waterProgressFill: {
+    height: '100%',
+    backgroundColor: '#4FC3F7',
+    borderRadius: 6,
+  },
+  waterStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  waterCurrentText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4FC3F7',
+  },
+  waterPercentText: {
+    fontSize: 14,
+    color: '#b4b4b4',
+  },
+  quickAddContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickAddButton: {
+    flex: 1,
+    backgroundColor: '#1e3a3a',
+    borderRadius: 12,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#4FC3F7',
+  },
+  quickAddIcon: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  quickAddLabel: {
+    fontSize: 10,
+    color: '#b4b4b4',
+    marginBottom: 2,
+  },
+  quickAddAmount: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#4FC3F7',
   },
   mealsSection: {
     marginBottom: 32,
@@ -496,6 +734,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#2a3447',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   mealInfo: {
     flex: 1,

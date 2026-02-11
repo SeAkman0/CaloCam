@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Kullanıcı profil verileri
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Öğünler
+    match /meals/{mealId} {
+      // Okuma: Mevcut dokümanın userId'si kontrolü
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Oluşturma: Yeni dokümanın userId'si kontrolü
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Güncelleme ve Silme: Mevcut dokümanın userId'si kontrolü
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+    
+    // Su tüketimi
+    match /waterIntake/{waterId} {
+      // Okuma: Mevcut dokümanın userId'si kontrolü
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Oluşturma: Yeni dokümanın userId'si kontrolü
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Güncelleme ve Silme: Mevcut dokümanın userId'si kontrolü
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Diyet listeleri — giriş yapmış herkes okuyup yazabilir (liste + seed için)
+    match /diets/{dietId} {
+      allow read, create, update, delete: if request.auth != null;
+    }
+
+    // Egzersiz kayıtları (yakılan kalori)
+    match /exerciseLogs/{logId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+  }
+}

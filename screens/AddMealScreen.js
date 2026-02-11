@@ -6,7 +6,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Image,
   Modal,
@@ -16,6 +15,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
 import { addMeal } from '../services/mealService';
 import { analyzeFoodImage } from '../services/foodAIService';
+import { searchFoodInUSDA, translateFoodName } from '../services/usdaFoodService';
+import { Ionicons } from '@expo/vector-icons';
+import { allowOnlyNumbers } from '../utils/validation';
 
 const MEAL_TYPES = [
   { id: 'breakfast', label: 'Kahvaltı', icon: '🌅' },
@@ -29,22 +31,23 @@ export default function AddMealScreen({ navigation }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [mealType, setMealType] = useState('breakfast');
   const [foodItems, setFoodItems] = useState([
-    { id: '1', name: '', portion: '', calories: '' }
+    { id: '1', name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false }
   ]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [showImageOptions, setShowImageOptions] = useState(false);
 
   const addFoodItem = () => {
     const newId = String(Date.now());
-    setFoodItems([...foodItems, { id: newId, name: '', portion: '', calories: '' }]);
+    setFoodItems([...foodItems, { id: newId, name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false }]);
   };
 
   const removeFoodItem = (id) => {
     if (foodItems.length === 1) {
-      Alert.alert('Uyarı', 'En az bir yiyecek eklemelisiniz');
+      console.log('⚠️ En az bir yiyecek eklemelisiniz');
       return;
     }
     setFoodItems(foodItems.filter(item => item.id !== id));
+    console.log('🗑️ Yiyecek silindi');
   };
 
   const updateFoodItem = (id, field, value) => {
@@ -53,52 +56,163 @@ export default function AddMealScreen({ navigation }) {
     ));
   };
 
-  const requestPermissions = async () => {
-    const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
-    const { status: mediaStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const queryFoodNutrients = async (itemId) => {
+    const item = foodItems.find(f => f.id === itemId);
     
-    if (cameraStatus !== 'granted' || mediaStatus !== 'granted') {
-      Alert.alert('İzin Gerekli', 'Kamera ve galeri erişimi için izin vermelisiniz');
-      return false;
+    if (!item.name) {
+      console.log('⚠️ Yiyecek adı girilmedi');
+      return;
     }
-    return true;
+
+    if (!item.portion) {
+      console.log('⚠️ Gramaj bilgisi girilmedi');
+      return;
+    }
+
+    // Gramajı parse et
+    const gramsMatch = item.portion.match(/(\d+)/);
+    if (!gramsMatch) {
+      console.log('⚠️ Geçersiz gramaj formatı:', item.portion);
+      return;
+    }
+    const grams = parseInt(gramsMatch[1]);
+
+    // Loading state'i aktif et
+    setFoodItems(foodItems.map(f => 
+      f.id === itemId ? { ...f, querying: true } : f
+    ));
+
+    try {
+      // Yiyecek adını İngilizce'ye çevir
+      const englishName = translateFoodName(item.name);
+      console.log(`🔍 Sorgulanıyor: "${item.name}" → "${englishName}"`);
+
+      // USDA'dan sorgula
+      const result = await searchFoodInUSDA(englishName);
+
+      if (result.success) {
+        const food = result.food;
+        
+        // Gramaja göre hesapla
+        const calories = Math.round((food.calories * grams) / 100);
+        const protein = Math.round((food.protein * grams) / 100);
+        const carbs = Math.round((food.carbs * grams) / 100);
+        const fat = Math.round((food.fat * grams) / 100);
+
+        // Input alanlarını doldur
+        setFoodItems(foodItems.map(f => 
+          f.id === itemId ? {
+            ...f,
+            calories: calories.toString(),
+            protein: protein.toString(),
+            carbs: carbs.toString(),
+            fat: fat.toString(),
+            querying: false
+          } : f
+        ));
+
+        console.log(`✅ "${item.name}" için besin değerleri bulundu ve dolduruldu:`);
+        console.log(`   Kalori: ${calories} kcal`);
+        console.log(`   Protein: ${protein}g`);
+        console.log(`   Karbonhidrat: ${carbs}g`);
+        console.log(`   Yağ: ${fat}g`);
+      } else {
+        setFoodItems(foodItems.map(f => 
+          f.id === itemId ? { ...f, querying: false } : f
+        ));
+        console.log(`❌ "${item.name}" için besin değerleri bulunamadı`);
+      }
+    } catch (error) {
+      console.error('❌ Sorgulama hatası:', error);
+      setFoodItems(foodItems.map(f => 
+        f.id === itemId ? { ...f, querying: false } : f
+      ));
+    }
   };
 
   const pickImageFromCamera = async () => {
-    setShowImageOptions(false);
-    
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    try {
+      console.log('📸 Kamera butonuna basıldı');
+      setShowImageOptions(false);
+      
+      console.log('🔐 Kamera izni kontrol ediliyor...');
+      const permissionResult = await ImagePicker.getCameraPermissionsAsync();
+      console.log('📋 Mevcut izin durumu:', permissionResult.status);
+      
+      if (permissionResult.status !== 'granted') {
+        console.log('⚠️ İzin yok, izin isteniyor...');
+        const requestResult = await ImagePicker.requestCameraPermissionsAsync();
+        console.log('📋 İzin isteği sonucu:', requestResult.status);
+        
+        if (requestResult.status !== 'granted') {
+          console.log('❌ Kamera erişimi reddedildi');
+          return;
+        }
+      }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+      console.log('✅ İzin alındı, kamera açılıyor...');
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
 
-    if (!result.canceled) {
-      setSelectedImage(result.assets[0].uri);
-      analyzeImage(result.assets[0].uri);
+      console.log('📷 Kamera sonucu:', result);
+
+      if (!result.canceled) {
+        console.log('✅ Fotoğraf çekildi:', result.assets[0].uri);
+        setSelectedImage(result.assets[0].uri);
+        analyzeImage(result.assets[0].uri);
+      } else {
+        console.log('⚠️ Kullanıcı fotoğraf çekmeyi iptal etti');
+      }
+    } catch (error) {
+      console.error('❌ Kamera hatası:', error);
+      console.error('Hata detayı:', error.message);
     }
   };
 
   const pickImageFromGallery = async () => {
-    setShowImageOptions(false);
-    
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    try {
+      console.log('📸 Galeriden seç butonuna basıldı');
+      setShowImageOptions(false);
+      
+      console.log('🔐 Galeri izni kontrol ediliyor...');
+      const permissionResult = await ImagePicker.getMediaLibraryPermissionsAsync();
+      console.log('📋 Mevcut izin durumu:', permissionResult.status);
+      
+      if (permissionResult.status !== 'granted') {
+        console.log('⚠️ İzin yok, izin isteniyor...');
+        const requestResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        console.log('📋 İzin isteği sonucu:', requestResult.status);
+        
+        if (requestResult.status !== 'granted') {
+          console.log('❌ Galeri erişimi reddedildi');
+          return;
+        }
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+      console.log('✅ İzin alındı, galeri açılıyor...');
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
 
-    if (!result.canceled) {
-      setSelectedImage(result.assets[0].uri);
-      analyzeImage(result.assets[0].uri);
+      console.log('📷 Galeri sonucu:', result);
+
+      if (!result.canceled) {
+        console.log('✅ Fotoğraf seçildi:', result.assets[0].uri);
+        setSelectedImage(result.assets[0].uri);
+        analyzeImage(result.assets[0].uri);
+      } else {
+        console.log('⚠️ Kullanıcı fotoğraf seçimini iptal etti');
+      }
+    } catch (error) {
+      console.error('❌ Galeri hatası:', error);
+      console.error('Hata detayı:', error.message);
     }
   };
 
@@ -108,24 +222,36 @@ export default function AddMealScreen({ navigation }) {
       const result = await analyzeFoodImage(imageUri);
       
       if (result.success && result.foods.length > 0) {
-        // AI sonuçlarını foodItems'a ekle
+        // AI sonuçlarını foodItems'a ekle (besin değerleriyle birlikte)
         const newFoodItems = result.foods.map(food => ({
           id: food.id,
           name: food.name,
           portion: food.portion,
           calories: food.calories.toString(),
+          protein: food.protein ? food.protein.toString() : '',
+          carbs: food.carbs ? food.carbs.toString() : '',
+          fat: food.fat ? food.fat.toString() : '',
+          querying: false,
         }));
         
         setFoodItems(newFoodItems);
-        Alert.alert('Başarılı! 🎉', result.message);
+        console.log('🎉 AI Analizi Başarılı:', result.message);
+        console.log(`📋 ${newFoodItems.length} yiyecek tespit edildi ve eklendi`);
+        
+        // Her yiyeceği detaylı logla
+        newFoodItems.forEach((food, index) => {
+          console.log(`   ${index + 1}. ${food.name} - ${food.portion} - ${food.calories} kcal`);
+        });
+        
+        // Toplam kaloriyi logla
+        const totalCal = newFoodItems.reduce((sum, f) => sum + parseInt(f.calories || 0), 0);
+        console.log(`💰 TOPLAM KALORİ: ${totalCal} kcal`);
       } else {
-        // Hata mesajını göster
         const errorMessage = result.error || 'Yiyecek tespit edilemedi. Manuel olarak ekleyebilirsin.';
-        Alert.alert('❌ Analiz Başarısız', errorMessage);
+        console.log('❌ Analiz Başarısız:', errorMessage);
       }
     } catch (error) {
-      console.error('Analiz hatası:', error);
-      Alert.alert('❌ Hata', `Görüntü analiz edilemedi: ${error.message}`);
+      console.error('❌ Görüntü analiz hatası:', error);
     } finally {
       setAnalyzing(false);
     }
@@ -143,14 +269,14 @@ export default function AddMealScreen({ navigation }) {
     const validItems = foodItems.filter(item => item.name && item.calories);
     
     if (validItems.length === 0) {
-      Alert.alert('Hata', 'En az bir yiyecek ekleyip ismini ve kalorisini girin');
+      console.log('⚠️ En az bir yiyecek ekleyip ismini ve kalorisini girin');
       return;
     }
 
     // Tüm itemların kalori bilgisi var mı kontrol et
     const hasEmptyCalories = validItems.some(item => !item.calories || isNaN(item.calories));
     if (hasEmptyCalories) {
-      Alert.alert('Hata', 'Lütfen tüm yiyeceklerin kalori bilgisini girin');
+      console.log('⚠️ Lütfen tüm yiyeceklerin kalori bilgisini girin');
       return;
     }
 
@@ -159,7 +285,8 @@ export default function AddMealScreen({ navigation }) {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) {
-        Alert.alert('Hata', 'Kullanıcı oturumu bulunamadı');
+        console.log('❌ Kullanıcı oturumu bulunamadı');
+        setLoading(false);
         return;
       }
 
@@ -170,29 +297,27 @@ export default function AddMealScreen({ navigation }) {
         items: validItems.map(item => ({
           name: item.name,
           portion: item.portion || '',
-          calories: parseInt(item.calories)
+          calories: parseInt(item.calories),
+          protein: item.protein ? parseInt(item.protein) : 0,
+          carbs: item.carbs ? parseInt(item.carbs) : 0,
+          fat: item.fat ? parseInt(item.fat) : 0,
         })),
         totalCalories,
       };
 
+      console.log('💾 Öğün kaydediliyor...');
       const result = await addMeal(currentUser.uid, mealData);
       
       if (result.success) {
-        Alert.alert(
-          'Başarılı', 
-          `${validItems.length} yiyecek eklendi!\nToplam: ${totalCalories} kcal`,
-          [
-            {
-              text: 'Tamam',
-              onPress: () => navigation.goBack()
-            }
-          ]
-        );
+        console.log(`✅ Öğün başarıyla eklendi!`);
+        console.log(`   ${validItems.length} yiyecek eklendi`);
+        console.log(`   Toplam: ${totalCalories} kcal`);
+        navigation.goBack();
       } else {
-        Alert.alert('Hata', result.error || 'Öğün eklenirken bir hata oluştu');
+        console.log('❌ Öğün eklenirken hata:', result.error);
       }
     } catch (error) {
-      Alert.alert('Hata', 'Öğün eklenirken bir hata oluştu');
+      console.log('❌ Öğün eklenirken hata:', error.message);
     } finally {
       setLoading(false);
     }
@@ -211,8 +336,9 @@ export default function AddMealScreen({ navigation }) {
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
           >
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="chevron-back" size={26} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.title}>Öğün Ekle</Text>
           <View style={styles.placeholder} />
@@ -250,7 +376,7 @@ export default function AddMealScreen({ navigation }) {
           )}
           
           <Text style={styles.inputHint}>
-            AI yiyecekleri tespit edip kalori tahmin edecek
+            AI tabaktaki her yiyeceği ayrı ayrı tespit edip besin değerlerini getirecek (sucuk+yumurta gibi)
           </Text>
         </View>
 
@@ -285,6 +411,7 @@ export default function AddMealScreen({ navigation }) {
             <Text style={styles.sectionTitle}>Yiyecekler</Text>
             {totalCalories > 0 && (
               <View style={styles.totalCaloriesBadge}>
+                <Text style={styles.totalCaloriesLabel}>TOPLAM</Text>
                 <Text style={styles.totalCaloriesText}>{totalCalories} kcal</Text>
               </View>
             )}
@@ -317,13 +444,15 @@ export default function AddMealScreen({ navigation }) {
 
               <View style={styles.inputRow}>
                 <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                  <Text style={styles.label}>Porsiyon / Gramaj</Text>
+                  <Text style={styles.label}>Porsiyon / Gramaj (g) *</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="100g"
+                    placeholder="100"
                     placeholderTextColor="#666"
                     value={item.portion}
-                    onChangeText={(value) => updateFoodItem(item.id, 'portion', value)}
+                    onChangeText={(value) => updateFoodItem(item.id, 'portion', allowOnlyNumbers(value).slice(0, 6))}
+                    keyboardType="number-pad"
+                    maxLength={6}
                   />
                 </View>
 
@@ -331,11 +460,72 @@ export default function AddMealScreen({ navigation }) {
                   <Text style={styles.label}>Kalori (kcal) *</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="50"
+                    placeholder="Sorgula"
                     placeholderTextColor="#666"
                     value={item.calories}
-                    onChangeText={(value) => updateFoodItem(item.id, 'calories', value)}
-                    keyboardType="numeric"
+                    onChangeText={(value) => updateFoodItem(item.id, 'calories', allowOnlyNumbers(value).slice(0, 6))}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                  />
+                </View>
+              </View>
+
+              {/* Sorgula Butonu */}
+              <TouchableOpacity
+                style={styles.queryButton}
+                onPress={() => queryFoodNutrients(item.id)}
+                disabled={item.querying}
+              >
+                {item.querying ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Text style={styles.queryButtonIcon}>🔍</Text>
+                    <Text style={styles.queryButtonText}>
+                      Besin Değerlerini Sorgula
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Besin Değerleri */}
+              <View style={styles.nutrientsContainer}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 4 }]}>
+                  <Text style={styles.label}>Protein (g)</Text>
+                  <TextInput
+                    style={[styles.input, styles.smallInput]}
+                    placeholder="0"
+                    placeholderTextColor="#666"
+                    value={item.protein}
+                    onChangeText={(value) => updateFoodItem(item.id, 'protein', allowOnlyNumbers(value).slice(0, 5))}
+                    keyboardType="number-pad"
+                    maxLength={5}
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, { flex: 1, marginHorizontal: 4 }]}>
+                  <Text style={styles.label}>Karb. (g)</Text>
+                  <TextInput
+                    style={[styles.input, styles.smallInput]}
+                    placeholder="0"
+                    placeholderTextColor="#666"
+                    value={item.carbs}
+                    onChangeText={(value) => updateFoodItem(item.id, 'carbs', allowOnlyNumbers(value).slice(0, 5))}
+                    keyboardType="number-pad"
+                    maxLength={5}
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, { flex: 1, marginLeft: 4 }]}>
+                  <Text style={styles.label}>Yağ (g)</Text>
+                  <TextInput
+                    style={[styles.input, styles.smallInput]}
+                    placeholder="0"
+                    placeholderTextColor="#666"
+                    value={item.fat}
+                    onChangeText={(value) => updateFoodItem(item.id, 'fat', allowOnlyNumbers(value).slice(0, 5))}
+                    keyboardType="number-pad"
+                    maxLength={5}
                   />
                 </View>
               </View>
@@ -356,7 +546,9 @@ export default function AddMealScreen({ navigation }) {
         <View style={styles.infoCard}>
           <Text style={styles.infoIcon}>💡</Text>
           <Text style={styles.infoText}>
-            Bir öğünde birden fazla yiyecek ekleyebilirsin. Örneğin kahvaltıda peynir, domates, sucuk ayrı ayrı.
+            📸 Fotoğraftan AI her yiyeceği AYRI AYRI tespit eder (örn: sucuk + yumurta). 
+            {'\n'}🔍 Manuel girişte yiyecek adı ve gramajını gir, "Sorgula" butonuna bas! 
+            {'\n'}✅ Toplam kalori otomatik hesaplanır, istersen manuel düzenle.
           </Text>
         </View>
 
@@ -440,18 +632,19 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#16213e',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#252542',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2a3447',
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#fff',
+    borderColor: 'rgba(79, 195, 247, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   title: {
     fontSize: 24,
@@ -477,14 +670,31 @@ const styles = StyleSheet.create({
   },
   totalCaloriesBadge: {
     backgroundColor: '#4CAF50',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 6,
+    flexDirection: 'column',
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  totalCaloriesLabel: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+    opacity: 0.9,
+    marginBottom: 2,
+    letterSpacing: 0.5,
   },
   totalCaloriesText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   mealTypeContainer: {
     flexDirection: 'row',
@@ -554,6 +764,14 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
+  },
+  nutrientsContainer: {
+    flexDirection: 'row',
+    marginTop: 4,
+  },
+  smallInput: {
+    paddingVertical: 10,
+    fontSize: 14,
   },
   label: {
     fontSize: 14,
@@ -700,6 +918,33 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  inputHint: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  queryButton: {
+    backgroundColor: '#2a3447',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  queryButtonIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  queryButtonText: {
+    color: '#4CAF50',
+    fontSize: 14,
+    fontWeight: '600',
   },
   // Modal Styles
   modalOverlay: {

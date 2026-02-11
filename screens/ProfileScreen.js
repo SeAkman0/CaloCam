@@ -6,13 +6,16 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { auth } from '../config/firebase';
 import { getUserData, updateUserProfile } from '../services/authService';
 import { signOut } from 'firebase/auth';
+import { Ionicons } from '@expo/vector-icons';
+import { allowOnlyNumbers, allowNumbersAndOneDecimal, parseBirthDate, formatBirthDate } from '../utils/validation';
 
 const GOALS = [
   { id: 'lose', label: 'Kilo Ver', icon: '📉' },
@@ -23,9 +26,11 @@ const GOALS = [
 export default function ProfileScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showBirthDatePicker, setShowBirthDatePicker] = useState(false);
   const [userData, setUserData] = useState({
     name: '',
     email: '',
+    gender: '',
     height: '',
     weight: '',
     birthDate: '',
@@ -47,14 +52,16 @@ export default function ProfileScreen({ navigation }) {
 
       const result = await getUserData(currentUser.uid);
       if (result.success) {
+        const birth = result.data.birthDate || '';
         setUserData({
           name: currentUser.displayName || '',
           email: currentUser.email || '',
+          gender: result.data.gender || '',
           height: result.data.height?.toString() || '',
           weight: result.data.weight?.toString() || '',
-          birthDate: result.data.birthDate || '',
+          birthDate: birth,
           goal: result.data.goal || 'maintain',
-          mealTimes: result.data.mealTimes || [],
+          mealTimes: result.data.mealTimes || '',
         });
       }
     } catch (error) {
@@ -64,10 +71,26 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  const handleBirthDateChange = (event, date) => {
+    setShowBirthDatePicker(Platform.OS === 'ios');
+    if (date) {
+      setUserData({ ...userData, birthDate: formatBirthDate(date) });
+    }
+  };
+
   const handleUpdate = async () => {
-    // Validasyon
-    if (!userData.height || !userData.weight || !userData.birthDate) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
+    if (!userData.gender || !userData.height || !userData.weight || !userData.birthDate) {
+      console.log('⚠️ Lütfen tüm alanları doldurun');
+      return;
+    }
+    const heightNum = parseFloat(userData.height);
+    const weightNum = parseFloat(userData.weight);
+    if (isNaN(heightNum) || heightNum < 100 || heightNum > 250) {
+      console.log('⚠️ Boy 100-250 cm arasında olmalı');
+      return;
+    }
+    if (isNaN(weightNum) || weightNum < 30 || weightNum > 300) {
+      console.log('⚠️ Kilo 30-300 kg arasında olmalı');
       return;
     }
 
@@ -77,6 +100,7 @@ export default function ProfileScreen({ navigation }) {
       if (!currentUser) return;
 
       const result = await updateUserProfile(currentUser.uid, {
+        gender: userData.gender,
         height: parseFloat(userData.height),
         weight: parseFloat(userData.weight),
         birthDate: userData.birthDate,
@@ -84,40 +108,29 @@ export default function ProfileScreen({ navigation }) {
       });
 
       if (result.success) {
-        Alert.alert('Başarılı', 'Profiliniz güncellendi!');
+        console.log('✅ Profil güncellendi!');
       } else {
-        Alert.alert('Hata', 'Güncelleme başarısız oldu');
+        console.log('❌ Güncelleme başarısız oldu');
       }
     } catch (error) {
-      Alert.alert('Hata', 'Bir hata oluştu');
+      console.log('❌ Bir hata oluştu:', error);
     } finally {
       setSaving(false);
     }
   };
 
   const handleLogout = async () => {
-    Alert.alert(
-      'Çıkış Yap',
-      'Çıkış yapmak istediğinizden emin misiniz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Çıkış Yap',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut(auth);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Welcome' }],
-              });
-            } catch (error) {
-              Alert.alert('Hata', 'Çıkış yapılamadı');
-            }
-          },
-        },
-      ]
-    );
+    try {
+      console.log('🚪 Çıkış yapılıyor...');
+      await signOut(auth);
+      console.log('✅ Çıkış başarılı');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    } catch (error) {
+      console.log('❌ Çıkış yapılamadı:', error);
+    }
   };
 
   if (loading) {
@@ -139,17 +152,18 @@ export default function ProfileScreen({ navigation }) {
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
           >
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="chevron-back" size={26} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.title}>Profilim</Text>
           <View style={styles.placeholder} />
         </View>
 
-        {/* Kullanıcı Bilgileri */}
+        {/* Kullanıcı Bilgileri (güncellenemez) */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Hesap Bilgileri</Text>
-          
+          <Text style={styles.readOnlyHint}>Ad ve e-posta giriş sırasında belirlenir, güncellenemez.</Text>
           <View style={styles.infoCard}>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Ad Soyad</Text>
@@ -168,14 +182,52 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>Fiziksel Bilgiler</Text>
           
           <View style={styles.inputGroup}>
+            <Text style={styles.label}>Cinsiyet *</Text>
+            <View style={styles.genderContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.genderButton,
+                  userData.gender === 'male' && styles.genderButtonActive
+                ]}
+                onPress={() => setUserData({ ...userData, gender: 'male' })}
+              >
+                <Text style={styles.genderIcon}>👨</Text>
+                <Text style={[
+                  styles.genderButtonText,
+                  userData.gender === 'male' && styles.genderButtonTextActive
+                ]}>
+                  Erkek
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.genderButton,
+                  userData.gender === 'female' && styles.genderButtonActive
+                ]}
+                onPress={() => setUserData({ ...userData, gender: 'female' })}
+              >
+                <Text style={styles.genderIcon}>👩</Text>
+                <Text style={[
+                  styles.genderButtonText,
+                  userData.gender === 'female' && styles.genderButtonTextActive
+                ]}>
+                  Kadın
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          <View style={styles.inputGroup}>
             <Text style={styles.label}>Boy (cm) *</Text>
             <TextInput
               style={styles.input}
               placeholder="Örn: 175"
               placeholderTextColor="#666"
               value={userData.height}
-              onChangeText={(value) => setUserData({ ...userData, height: value })}
-              keyboardType="numeric"
+              onChangeText={(value) => setUserData({ ...userData, height: allowOnlyNumbers(value).slice(0, 3) })}
+              keyboardType="number-pad"
+              maxLength={3}
             />
           </View>
 
@@ -183,25 +235,36 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.label}>Kilo (kg) *</Text>
             <TextInput
               style={styles.input}
-              placeholder="Örn: 70"
+              placeholder="Örn: 70 veya 70.5"
               placeholderTextColor="#666"
               value={userData.weight}
-              onChangeText={(value) => setUserData({ ...userData, weight: value })}
-              keyboardType="numeric"
+              onChangeText={(value) => setUserData({ ...userData, weight: allowNumbersAndOneDecimal(value).slice(0, 6) })}
+              keyboardType="decimal-pad"
+              maxLength={6}
             />
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Doğum Tarihi (GG/AA/YYYY) *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Örn: 15/06/1990"
-              placeholderTextColor="#666"
-              value={userData.birthDate}
-              onChangeText={(value) => setUserData({ ...userData, birthDate: value })}
-              keyboardType="numeric"
-              maxLength={10}
-            />
+            <Text style={styles.label}>Doğum Tarihi *</Text>
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => setShowBirthDatePicker(true)}
+            >
+              <Text style={[styles.datePickerButtonText, !userData.birthDate && styles.datePickerPlaceholder]}>
+                {userData.birthDate || 'Tarih seçin'}
+              </Text>
+              <Text style={styles.datePickerIcon}>📅</Text>
+            </TouchableOpacity>
+            {showBirthDatePicker && (
+              <DateTimePicker
+                value={parseBirthDate(userData.birthDate) || new Date(1990, 5, 15)}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleBirthDateChange}
+                maximumDate={new Date()}
+                minimumDate={new Date(1900, 0, 1)}
+              />
+            )}
           </View>
         </View>
 
@@ -282,18 +345,19 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#16213e',
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#252542',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2a3447',
-  },
-  backIcon: {
-    fontSize: 24,
-    color: '#fff',
+    borderColor: 'rgba(79, 195, 247, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   title: {
     fontSize: 24,
@@ -311,6 +375,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 16,
+  },
+  readOnlyHint: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginBottom: 10,
   },
   infoCard: {
     backgroundColor: '#16213e',
@@ -355,6 +424,26 @@ const styles = StyleSheet.create({
     color: '#fff',
     borderWidth: 1,
     borderColor: '#2a3447',
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#16213e',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    color: '#fff',
+  },
+  datePickerPlaceholder: {
+    color: '#666',
+  },
+  datePickerIcon: {
+    fontSize: 20,
   },
   goalsContainer: {
     flexDirection: 'row',
@@ -404,6 +493,35 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  genderContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  genderButton: {
+    flex: 1,
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#2a3447',
+  },
+  genderButtonActive: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#1e3a28',
+  },
+  genderIcon: {
+    fontSize: 40,
+    marginBottom: 8,
+  },
+  genderButtonText: {
+    fontSize: 14,
+    color: '#b4b4b4',
+    fontWeight: '600',
+  },
+  genderButtonTextActive: {
+    color: '#4CAF50',
   },
   logoutButton: {
     backgroundColor: '#16213e',

@@ -6,14 +6,15 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
   Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { updateUserProfile } from '../services/authService';
+import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../config/firebase';
+import { allowOnlyNumbers, allowNumbersAndOneDecimal } from '../utils/validation';
 
 export default function OnboardingScreen({ navigation }) {
   const [step, setStep] = useState(1);
@@ -25,6 +26,7 @@ export default function OnboardingScreen({ navigation }) {
   
   // Kullanıcı verileri
   const [userData, setUserData] = useState({
+    gender: '', // male, female
     height: '',
     weight: '',
     birthDate: '',
@@ -87,16 +89,16 @@ export default function OnboardingScreen({ navigation }) {
 
   const nextStep = () => {
     // Validasyon
-    if (step === 1 && (!userData.height || !userData.weight || !userData.birthDate)) {
-      Alert.alert('Hata', 'Lütfen tüm alanları doldurun');
+    if (step === 1 && (!userData.gender || !userData.height || !userData.weight || !userData.birthDate)) {
+      console.log('⚠️ Step 1 validasyon hatası - eksik alanlar var');
       return;
     }
     if (step === 2 && (!userData.mealsPerDay || userData.mealTimes.length === 0)) {
-      Alert.alert('Hata', 'Lütfen günlük öğün sayısını seçin');
+      console.log('⚠️ Step 2 validasyon hatası - öğün sayısı seçilmedi');
       return;
     }
     if (step === 3 && !userData.goal) {
-      Alert.alert('Hata', 'Lütfen hedefinizi seçin');
+      console.log('⚠️ Step 3 validasyon hatası - hedef seçilmedi');
       return;
     }
 
@@ -124,6 +126,7 @@ export default function OnboardingScreen({ navigation }) {
 
       // Firebase'e kullanıcı bilgilerini kaydet
       const result = await updateUserProfile(currentUser.uid, {
+        gender: userData.gender,
         height: parseInt(userData.height),
         weight: parseInt(userData.weight),
         birthDate: userData.birthDate,
@@ -134,23 +137,13 @@ export default function OnboardingScreen({ navigation }) {
       });
 
       if (result.success) {
-        Alert.alert(
-          'Başarılı! 🎉', 
-          'Profiliniz oluşturuldu!',
-          [
-            {
-              text: 'Tamam',
-              onPress: () => {
-                navigation.replace('Dashboard');
-              }
-            }
-          ]
-        );
+        console.log('✅ Onboarding tamamlandı! Profil oluşturuldu.');
+        navigation.replace('MainTabs');
       } else {
         throw new Error(result.error || 'Profil kaydedilemedi');
       }
     } catch (error) {
-      Alert.alert('Hata', 'Bir hata oluştu: ' + error.message);
+      console.log('❌ Onboarding hatası:', error.message);
     } finally {
       setLoading(false);
     }
@@ -165,6 +158,43 @@ export default function OnboardingScreen({ navigation }) {
             <Text style={styles.stepSubtitle}>
               Kalori hedefini hesaplamak için bilgilerinize ihtiyacımız var
             </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Cinsiyet</Text>
+              <View style={styles.genderContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.genderButton,
+                    userData.gender === 'male' && styles.genderButtonActive
+                  ]}
+                  onPress={() => updateData('gender', 'male')}
+                >
+                  <Text style={styles.genderIcon}>👨</Text>
+                  <Text style={[
+                    styles.genderButtonText,
+                    userData.gender === 'male' && styles.genderButtonTextActive
+                  ]}>
+                    Erkek
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.genderButton,
+                    userData.gender === 'female' && styles.genderButtonActive
+                  ]}
+                  onPress={() => updateData('gender', 'female')}
+                >
+                  <Text style={styles.genderIcon}>👩</Text>
+                  <Text style={[
+                    styles.genderButtonText,
+                    userData.gender === 'female' && styles.genderButtonTextActive
+                  ]}>
+                    Kadın
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Doğum Tarihi</Text>
@@ -184,7 +214,7 @@ export default function OnboardingScreen({ navigation }) {
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                   onChange={handleDateChange}
                   maximumDate={new Date()}
-                  minimumDate={new Date(1940, 0, 1)}
+                  minimumDate={new Date(1900, 0, 1)}
                 />
               )}
               <Text style={styles.inputHint}>Yaşınıza göre kalori hesaplanacak</Text>
@@ -197,8 +227,9 @@ export default function OnboardingScreen({ navigation }) {
                 placeholder="170"
                 placeholderTextColor="#666"
                 value={userData.height}
-                onChangeText={(value) => updateData('height', value)}
-                keyboardType="numeric"
+                onChangeText={(value) => updateData('height', allowOnlyNumbers(value).slice(0, 3))}
+                keyboardType="number-pad"
+                maxLength={3}
               />
             </View>
 
@@ -206,11 +237,12 @@ export default function OnboardingScreen({ navigation }) {
               <Text style={styles.label}>Kilo (kg)</Text>
               <TextInput
                 style={styles.input}
-                placeholder="70"
+                placeholder="70 veya 70.5"
                 placeholderTextColor="#666"
                 value={userData.weight}
-                onChangeText={(value) => updateData('weight', value)}
-                keyboardType="numeric"
+                onChangeText={(value) => updateData('weight', allowNumbersAndOneDecimal(value).slice(0, 6))}
+                keyboardType="decimal-pad"
+                maxLength={6}
               />
             </View>
           </View>
@@ -396,7 +428,9 @@ export default function OnboardingScreen({ navigation }) {
               style={styles.backButton}
               onPress={prevStep}
               disabled={loading}
+              activeOpacity={0.7}
             >
+              <Ionicons name="chevron-back" size={22} color="#fff" />
               <Text style={styles.backButtonText}>Geri</Text>
             </TouchableOpacity>
           )}
@@ -635,12 +669,20 @@ const styles = StyleSheet.create({
   },
   backButton: {
     flex: 1,
+    flexDirection: 'row',
     paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: '#16213e',
+    borderRadius: 14,
+    backgroundColor: '#252542',
     borderWidth: 1,
-    borderColor: '#2a3447',
+    borderColor: 'rgba(79, 195, 247, 0.25)',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   backButtonText: {
     color: '#fff',
@@ -666,5 +708,34 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  genderContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  genderButton: {
+    flex: 1,
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#2a3447',
+  },
+  genderButtonActive: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#1e3a28',
+  },
+  genderIcon: {
+    fontSize: 48,
+    marginBottom: 8,
+  },
+  genderButtonText: {
+    fontSize: 16,
+    color: '#b4b4b4',
+    fontWeight: '600',
+  },
+  genderButtonTextActive: {
+    color: '#4CAF50',
   },
 });

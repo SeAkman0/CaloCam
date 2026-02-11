@@ -21,16 +21,23 @@ export const detectFoodWithGemini = async (base64Image) => {
     const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
 
     // Gemini'ye gönderilecek prompt
-    const prompt = `Bu resimde hangi yemekler var? Lütfen şu formatta listele:
+    const prompt = `Bu resimde hangi yemekler var? 
 
-Her yemek için:
-- Yemek adı (Türkçe)
-- Tahmini gramaj
-- Güvenlik skoru (0.0-1.0)
+ÇOK ÖNEMLİ KURALLAR:
+1. Her yiyeceği AYRI AYRI listele!
+2. Kombine yemekleri ayır (örn: "sucuklu yumurta" → "Sucuk" ve "Yumurta" şeklinde iki ayrı satır)
+3. "Peynirli omlet" → "Peynir" ve "Yumurta" (omlet için)
+4. "Menemen" → "Yumurta", "Domates", "Biber" ayrı ayrı
+5. Tabakta gördüğün HER yiyeceği say ve listele
 
 Format:
-Yemek1|150g|0.85
-Yemek2|200g|0.90
+YiyecekAdı|tahmini_gramaj|güven_skoru
+
+Örnek doğru format:
+Sucuk|50g|0.9
+Yumurta|60g|0.85
+Ekmek|100g|0.9
+Domates|80g|0.8
 
 Sadece listeyi ver, açıklama ekleme. Her satır bir yemek olsun.`;
 

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './config/firebase';
 import { getUserData } from './services/authService';
@@ -11,11 +13,51 @@ import LoginScreen from './screens/LoginScreen';
 import SignupScreen from './screens/SignupScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
 import DashboardScreen from './screens/DashboardScreen';
+import DietListsScreen from './screens/DietListsScreen';
+import DietDetailScreen from './screens/DietDetailScreen';
+import ExerciseScreen from './screens/ExerciseScreen';
 import AddMealScreen from './screens/AddMealScreen';
+import MealDetailScreen from './screens/MealDetailScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import StatsScreen from './screens/StatsScreen';
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarStyle: { backgroundColor: '#252542', borderTopColor: '#2a3447' },
+        tabBarActiveTintColor: '#4FC3F7',
+        tabBarInactiveTintColor: '#6b7280',
+      }}
+    >
+      <Tab.Screen
+        name="Ana Sayfa"
+        component={DashboardScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Diyet Listeleri"
+        component={DietListsScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="restaurant" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Egzersiz"
+        component={ExerciseScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="barbell" size={size} color={color} />,
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
 
 export default function App() {
   const [initializing, setInitializing] = useState(true);
@@ -56,7 +98,7 @@ export default function App() {
       <Stack.Navigator 
         initialRouteName={
           user 
-            ? (onboardingCompleted ? 'Dashboard' : 'Onboarding')
+            ? (onboardingCompleted ? 'MainTabs' : 'Onboarding')
             : 'Welcome'
         }
         screenOptions={{
@@ -71,8 +113,10 @@ export default function App() {
           name="Onboarding" 
           component={OnboardingScreen}
         />
-        <Stack.Screen name="Dashboard" component={DashboardScreen} />
+        <Stack.Screen name="MainTabs" component={MainTabs} />
+        <Stack.Screen name="DietDetail" component={DietDetailScreen} />
         <Stack.Screen name="AddMeal" component={AddMealScreen} />
+        <Stack.Screen name="MealDetail" component={MealDetailScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="Stats" component={StatsScreen} />
       </Stack.Navigator>
