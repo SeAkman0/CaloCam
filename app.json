@@ -41,7 +41,7 @@
           "cameraPermission": "CaloCam'in kameraya erişmesine izin ver."
         }
       ],
-      "expo-web-browser"
+      ["expo-camera",{"cameraPermission":"CaloCam'in barkod okutmak için kameraya erişmesine izin ver."}],"expo-web-browser"
     ]
   }
 }

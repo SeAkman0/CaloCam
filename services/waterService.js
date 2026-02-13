@@ -262,6 +262,6 @@ export const getWaterGoalProgress = async (userId, dailyGoal) => {
 export const QUICK_ADD_AMOUNTS = [
   { id: 'glass', label: '1 Bardak', amount: 200, icon: '🥤' },
   { id: 'water_glass', label: '1 Su Bardağı', amount: 250, icon: '💧' },
-  { id: 'bottle', label: '1 Şişe', amount: 500, icon: '🫙' },
+  { id: 'bottle', label: '1 Şişe', amount: 500, icon: '🍶' },
   { id: 'large_bottle', label: '1 Büyük Şişe', amount: 1000, icon: '🧊' },
 ];

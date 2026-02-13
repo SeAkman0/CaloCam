@@ -19,6 +19,8 @@ import { auth } from '../config/firebase';
 import { addMeal } from '../services/mealService';
 import { analyzeFoodImage } from '../services/foodAIService';
 import { searchFoodInUSDA, translateFoodName } from '../services/usdaFoodService';
+import { getProductByBarcode } from '../services/openFoodFactsService';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { allowOnlyNumbers } from '../utils/validation';
 
@@ -38,6 +40,15 @@ export default function AddMealScreen({ navigation }) {
   ]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [showImageOptions, setShowImageOptions] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [showBarcodeError, setShowBarcodeError] = useState(false);
+  const [barcodeErrorMessage, setBarcodeErrorMessage] = useState('');
+  const [showBarcodeConfirm, setShowBarcodeConfirm] = useState(false);
+  const [barcodeConfirmData, setBarcodeConfirmData] = useState(null);
+  const barcodeScannedRef = useRef(false);
+  const barcodeErrorShowingRef = useRef(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [highlightInvalidId, setHighlightInvalidId] = useState(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
@@ -293,6 +304,87 @@ export default function AddMealScreen({ navigation }) {
     }
   };
 
+  const openBarcodeScanner = () => {
+    barcodeScannedRef.current = false;
+    if (!cameraPermission?.granted) {
+      requestCameraPermission().then((result) => {
+        if (result?.granted) setShowBarcodeScanner(true);
+        else Alert.alert('Kamera İzni', 'Barkod okutmak için kameraya izin vermeniz gerekir.');
+      });
+    } else {
+      setShowBarcodeScanner(true);
+    }
+  };
+
+  const closeBarcodeErrorModal = () => {
+    setShowBarcodeError(false);
+    barcodeErrorShowingRef.current = false;
+  };
+
+  const confirmBarcodeAdd = () => {
+    if (!barcodeConfirmData) return;
+    const itemData = {
+      name: barcodeConfirmData.name,
+      portion: barcodeConfirmData.portion,
+      calories: barcodeConfirmData.calories,
+      protein: barcodeConfirmData.protein,
+      carbs: barcodeConfirmData.carbs,
+      fat: barcodeConfirmData.fat,
+      querying: false,
+    };
+    setFoodItems((prev) => {
+      const first = prev[0];
+      const firstEmpty = first && !(first.name || '').trim() && !(first.portion || '').trim() && !(first.calories || '').trim();
+      if (firstEmpty) {
+        return [{ ...prev[0], ...itemData }, ...prev.slice(1)];
+      }
+      return [...prev, { id: String(Date.now()), ...itemData }];
+    });
+    setShowBarcodeConfirm(false);
+    setBarcodeConfirmData(null);
+  };
+
+  const cancelBarcodeConfirm = () => {
+    setShowBarcodeConfirm(false);
+    setBarcodeConfirmData(null);
+  };
+
+  const onBarcodeScanned = async ({ data }) => {
+    if (barcodeErrorShowingRef.current) return;
+    if (barcodeScannedRef.current || barcodeLoading) return;
+    barcodeScannedRef.current = true;
+    setBarcodeLoading(true);
+    setShowBarcodeError(false);
+    try {
+      const result = await getProductByBarcode(data);
+      if (result.success) {
+        setShowBarcodeScanner(false);
+        setBarcodeConfirmData({
+          name: result.productName || '',
+          portion: String(result.portion ?? 100),
+          calories: String(result.calories ?? 0),
+          protein: String(result.protein ?? 0),
+          carbs: String(result.carbs ?? 0),
+          fat: String(result.fat ?? 0),
+          imageUrl: result.imageUrl || null,
+        });
+        setShowBarcodeConfirm(true);
+      } else {
+        setBarcodeErrorMessage(result.error || 'Bu barkod için besin verisi yok.');
+        barcodeErrorShowingRef.current = true;
+        setShowBarcodeError(true);
+      }
+    } catch (err) {
+      setShowBarcodeScanner(false);
+      setBarcodeErrorMessage(err.message || 'Barkod sorgulanırken hata oluştu.');
+      barcodeErrorShowingRef.current = true;
+      setShowBarcodeError(true);
+    } finally {
+      setBarcodeLoading(false);
+      barcodeScannedRef.current = false;
+    }
+  };
+
   const calculateTotalCalories = () => {
     return foodItems.reduce((total, item) => {
       const calories = parseInt(item.calories) || 0;
@@ -420,6 +512,28 @@ export default function AddMealScreen({ navigation }) {
           
           <Text style={styles.inputHint}>
             AI tabaktaki her yiyeceği ayrı ayrı tespit edip besin değerlerini getirecek.
+          </Text>
+        </View>
+
+        {/* Barkod ile Paketli Gıda */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Barkod ile Ekle 📦</Text>
+          <TouchableOpacity
+            style={styles.barcodeButton}
+            onPress={openBarcodeScanner}
+            disabled={barcodeLoading}
+          >
+            {barcodeLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Text style={styles.barcodeButtonIcon}>📷</Text>
+                <Text style={styles.barcodeButtonText}>Barkod Okut</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.inputHint}>
+            Paketli ürünün barkodunu okutun; kalori, protein, karbonhidrat ve yağ otomatik doldurulur (Open Food Facts).
           </Text>
         </View>
 
@@ -610,6 +724,7 @@ export default function AddMealScreen({ navigation }) {
           <Text style={styles.infoIcon}>💡</Text>
           <Text style={styles.infoText}>
             📸 Fotoğraftan AI her yiyeceği AYRI AYRI tespit eder. 
+            {'\n'}📦 Barkod ile paketli gıdaların kalori ve makro değerleri otomatik gelir. 
             {'\n'}🔍 Manuel girişte yiyecek adı ve gramajını gir, "Sorgula" butonuna bas! 
             {'\n'}✅ Toplam kalori otomatik hesaplanır, istersen manuel düzenle.
           </Text>
@@ -668,6 +783,114 @@ export default function AddMealScreen({ navigation }) {
               onPress={() => setShowImageOptions(false)}
             >
               <Text style={styles.modalCancelText}>İptal</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Barkod Tarayıcı Modalı */}
+      <Modal
+        visible={showBarcodeScanner}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setShowBarcodeScanner(false)}
+      >
+        <View style={styles.barcodeModalContainer}>
+          <View style={styles.barcodeModalHeader}>
+            <Text style={styles.barcodeModalTitle}>Barkod Okut</Text>
+            <TouchableOpacity
+              style={styles.barcodeCloseButton}
+              onPress={() => setShowBarcodeScanner(false)}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {cameraPermission?.granted ? (
+            <View style={styles.cameraWrapper}>
+              <CameraView
+                style={styles.camera}
+                facing="back"
+                barcodeScannerSettings={{
+                  barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'],
+                }}
+                onBarcodeScanned={onBarcodeScanned}
+              />
+              <View style={styles.barcodeOverlay}>
+                <Text style={styles.barcodeOverlayText}>Barkodu çerçeve içine alın</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.barcodePermissionBox}>
+              <Text style={styles.barcodePermissionText}>Kamera erişimi gerekli</Text>
+              <TouchableOpacity style={styles.barcodeButton} onPress={requestCameraPermission}>
+                <Text style={styles.barcodeButtonText}>İzin Ver</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      {/* Barkod Ürün Onay Modalı (foto + bilgi, Tamam = ekle) */}
+      <Modal
+        visible={showBarcodeConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelBarcodeConfirm}
+      >
+        <View style={styles.barcodeConfirmOverlay}>
+          <View style={styles.barcodeConfirmCard}>
+            <Text style={styles.barcodeConfirmTitle}>Ürünü ekleyelim mi?</Text>
+            {barcodeConfirmData?.imageUrl ? (
+              <Image source={{ uri: barcodeConfirmData.imageUrl }} style={styles.barcodeConfirmImage} />
+            ) : (
+              <View style={styles.barcodeConfirmImagePlaceholder}>
+                <Ionicons name="nutrition-outline" size={56} color="#4CAF50" />
+              </View>
+            )}
+            <Text style={styles.barcodeConfirmName} numberOfLines={2}>{barcodeConfirmData?.name}</Text>
+            <View style={styles.barcodeConfirmRow}>
+              <Text style={styles.barcodeConfirmLabel}>{barcodeConfirmData?.portion}g</Text>
+              <Text style={styles.barcodeConfirmLabel}> • </Text>
+              <Text style={styles.barcodeConfirmLabel}>{barcodeConfirmData?.calories} kcal</Text>
+            </View>
+            <View style={styles.barcodeConfirmMacros}>
+              <Text style={styles.barcodeConfirmMacro}>P: {barcodeConfirmData?.protein}g</Text>
+              <Text style={styles.barcodeConfirmMacro}>K: {barcodeConfirmData?.carbs}g</Text>
+              <Text style={styles.barcodeConfirmMacro}>Y: {barcodeConfirmData?.fat}g</Text>
+            </View>
+            <View style={styles.barcodeConfirmButtons}>
+              <TouchableOpacity style={styles.barcodeConfirmCancelBtn} onPress={cancelBarcodeConfirm} activeOpacity={0.8}>
+                <Text style={styles.barcodeConfirmCancelText}>İptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.barcodeConfirmOkBtn} onPress={confirmBarcodeAdd} activeOpacity={0.8}>
+                <Text style={styles.barcodeConfirmOkText}>Tamam, Ekle</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Barkod Ürün Bulunamadı / Hata Modalı */}
+      <Modal
+        visible={showBarcodeError}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBarcodeErrorModal}
+      >
+        <View style={styles.barcodeErrorOverlay}>
+          <View style={styles.barcodeErrorCard}>
+            <View style={styles.barcodeErrorIconWrap}>
+              <Ionicons name="barcode-outline" size={48} color="#f59e0b" />
+            </View>
+            <Text style={styles.barcodeErrorTitle}>Ürün Bulunamadı</Text>
+            <Text style={styles.barcodeErrorMessage}>{barcodeErrorMessage}</Text>
+            <Text style={styles.barcodeErrorHint}>Tamam'a basıp tekrar barkod okutabilirsiniz.</Text>
+            <TouchableOpacity
+              style={styles.barcodeErrorButton}
+              onPress={closeBarcodeErrorModal}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.barcodeErrorButtonText}>Tamam</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -888,6 +1111,229 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#4CAF50',
     fontWeight: 'bold',
+  },
+  barcodeButton: {
+    backgroundColor: '#16213e',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#2a3447',
+  },
+  barcodeButtonIcon: {
+    fontSize: 24,
+    marginRight: 8,
+  },
+  barcodeButtonText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  barcodeModalContainer: {
+    flex: 1,
+    backgroundColor: '#1a1a2e',
+  },
+  barcodeModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 56,
+    paddingBottom: 16,
+    backgroundColor: '#16213e',
+  },
+  barcodeModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  barcodeCloseButton: {
+    padding: 8,
+  },
+  cameraWrapper: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  camera: {
+    flex: 1,
+  },
+  barcodeOverlay: {
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  barcodeOverlayText: {
+    color: '#fff',
+    fontSize: 14,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  barcodePermissionBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  barcodePermissionText: {
+    color: '#b4b4b4',
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  barcodeErrorOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  barcodeErrorCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  barcodeErrorIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  barcodeErrorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  barcodeErrorMessage: {
+    fontSize: 15,
+    color: '#b4b4b4',
+    textAlign: 'center',
+    marginBottom: 8,
+    lineHeight: 22,
+  },
+  barcodeErrorHint: {
+    fontSize: 13,
+    color: '#888',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  barcodeErrorButton: {
+    backgroundColor: '#f59e0b',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  barcodeErrorButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1a1a2e',
+  },
+  barcodeConfirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  barcodeConfirmCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  barcodeConfirmTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 16,
+  },
+  barcodeConfirmImage: {
+    width: 140,
+    height: 140,
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#0f1724',
+  },
+  barcodeConfirmImagePlaceholder: {
+    width: 140,
+    height: 140,
+    borderRadius: 12,
+    marginBottom: 12,
+    backgroundColor: '#0f1724',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  barcodeConfirmName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  barcodeConfirmRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+  },
+  barcodeConfirmLabel: {
+    fontSize: 14,
+    color: '#b4b4b4',
+  },
+  barcodeConfirmMacros: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  barcodeConfirmMacro: {
+    fontSize: 13,
+    color: '#888',
+  },
+  barcodeConfirmButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  barcodeConfirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#2a3447',
+    alignItems: 'center',
+  },
+  barcodeConfirmCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#b4b4b4',
+  },
+  barcodeConfirmOkBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+  },
+  barcodeConfirmOkText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
   },
   infoCard: {
     backgroundColor: '#16213e',

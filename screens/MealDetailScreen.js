@@ -126,7 +126,7 @@ export default function MealDetailScreen({ navigation, route }) {
             </View>
 
             <View style={styles.nutrientCard}>
-              <Text style={styles.nutrientIcon}>🥑</Text>
+              <Text style={styles.nutrientIcon}>🧈</Text>
               <Text style={styles.nutrientLabel}>Yağ</Text>
               <Text style={styles.nutrientValue}>{totalFat}g</Text>
             </View>

@@ -36,8 +36,11 @@ export default function ProfileScreen({ navigation }) {
     weight: '',
     birthDate: '',
     goal: 'maintain',
+    mealsPerDay: '',
     mealTimes: [],
   });
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [selectedTimeIndex, setSelectedTimeIndex] = useState(null);
 
   useEffect(() => {
     loadUserData();
@@ -54,6 +57,13 @@ export default function ProfileScreen({ navigation }) {
       const result = await getUserData(currentUser.uid);
       if (result.success) {
         const birth = result.data.birthDate || '';
+        const rawMealTimes = result.data.mealTimes;
+        const mealTimesArray = Array.isArray(rawMealTimes)
+          ? rawMealTimes
+          : (typeof rawMealTimes === 'string' && rawMealTimes.trim()
+              ? rawMealTimes.split(',').map((t) => t.trim()).filter(Boolean)
+              : []);
+        const mealsPerDay = result.data.mealsPerDay;
         setUserData({
           name: currentUser.displayName || '',
           email: currentUser.email || '',
@@ -62,7 +72,8 @@ export default function ProfileScreen({ navigation }) {
           weight: result.data.weight?.toString() || '',
           birthDate: birth,
           goal: result.data.goal || 'maintain',
-          mealTimes: result.data.mealTimes || '',
+          mealsPerDay: mealsPerDay != null ? String(mealsPerDay) : '',
+          mealTimes: mealTimesArray.length > 0 ? mealTimesArray : [],
         });
       }
     } catch (error) {
@@ -77,6 +88,49 @@ export default function ProfileScreen({ navigation }) {
     if (date) {
       setUserData({ ...userData, birthDate: formatBirthDate(date) });
     }
+  };
+
+  const handleMealsPerDayChange = (count) => {
+    const defaultTimes = [];
+    const startHour = 8;
+    const interval = Math.floor(12 / count);
+    for (let i = 0; i < count; i++) {
+      const hour = startHour + (interval * i);
+      defaultTimes.push(`${hour.toString().padStart(2, '0')}:00`);
+    }
+    setUserData({
+      ...userData,
+      mealsPerDay: count.toString(),
+      mealTimes: defaultTimes,
+    });
+  };
+
+  const updateMealTime = (index, time) => {
+    const newTimes = [...userData.mealTimes];
+    newTimes[index] = time;
+    setUserData({ ...userData, mealTimes: newTimes });
+  };
+
+  const handleTimeChange = (event, time) => {
+    setShowTimePicker(Platform.OS === 'ios');
+    if (time != null && selectedTimeIndex !== null) {
+      const hours = time.getHours().toString().padStart(2, '0');
+      const minutes = time.getMinutes().toString().padStart(2, '0');
+      updateMealTime(selectedTimeIndex, `${hours}:${minutes}`);
+    }
+  };
+
+  const openTimePicker = (index) => {
+    setSelectedTimeIndex(index);
+    setShowTimePicker(true);
+  };
+
+  const getTimePickerValue = () => {
+    if (selectedTimeIndex == null || !userData.mealTimes[selectedTimeIndex]) return new Date();
+    const [h, m] = userData.mealTimes[selectedTimeIndex].split(':').map(Number);
+    const d = new Date();
+    d.setHours(isNaN(h) ? 8 : h, isNaN(m) ? 0 : m, 0, 0);
+    return d;
   };
 
   const handleUpdate = async () => {
@@ -97,6 +151,10 @@ export default function ProfileScreen({ navigation }) {
       Alert.alert('Girdinizi Kontrol Edin', 'Kilo 30–300 kg arasında olmalıdır. Lütfen geçerli bir değer girin.');
       return;
     }
+    if (!userData.mealsPerDay || !userData.mealTimes || userData.mealTimes.length === 0) {
+      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen günlük öğün sayısını seçin.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -109,10 +167,13 @@ export default function ProfileScreen({ navigation }) {
         weight: parseFloat(userData.weight),
         birthDate: userData.birthDate,
         goal: userData.goal,
+        mealsPerDay: parseInt(userData.mealsPerDay, 10),
+        mealTimes: userData.mealTimes,
       });
 
       if (result.success) {
         console.log('✅ Profil güncellendi!');
+        navigation.goBack();
       } else {
         console.log('❌ Güncelleme başarısız oldu');
       }
@@ -270,6 +331,62 @@ export default function ProfileScreen({ navigation }) {
               />
             )}
           </View>
+        </View>
+
+        {/* Günlük Öğün */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Günlük Öğün</Text>
+          <Text style={styles.readOnlyHint}>Günde kaç öğün yediğinizi ve öğün saatlerinizi seçin.</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Günlük Öğün Sayısı</Text>
+            <View style={styles.mealButtonContainer}>
+              {[2, 3, 4, 5, 6].map((num) => (
+                <TouchableOpacity
+                  key={num}
+                  style={[
+                    styles.mealButton,
+                    userData.mealsPerDay === num.toString() && styles.mealButtonActive
+                  ]}
+                  onPress={() => handleMealsPerDayChange(num)}
+                >
+                  <Text style={[
+                    styles.mealButtonText,
+                    userData.mealsPerDay === num.toString() && styles.mealButtonTextActive
+                  ]}>
+                    {num}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {userData.mealTimes.length > 0 && (
+            <View style={styles.mealTimesContainer}>
+              <Text style={styles.label}>Öğün Saatleri</Text>
+              {userData.mealTimes.map((time, index) => (
+                <View key={index} style={styles.timeInputGroup}>
+                  <Text style={styles.timeLabel}>{index + 1}. Öğün:</Text>
+                  <TouchableOpacity
+                    style={styles.timePickerButton}
+                    onPress={() => openTimePicker(index)}
+                  >
+                    <Text style={styles.timePickerText}>{time}</Text>
+                    <Text style={styles.timePickerIcon}>🕐</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {showTimePicker && selectedTimeIndex !== null && (
+                <DateTimePicker
+                  value={getTimePickerValue()}
+                  mode="time"
+                  is24Hour={true}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleTimeChange}
+                />
+              )}
+            </View>
+          )}
         </View>
 
         {/* Hedef */}
@@ -539,5 +656,68 @@ const styles = StyleSheet.create({
     color: '#ff4444',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  mealButtonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  mealButton: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: '#16213e',
+    borderWidth: 1,
+    borderColor: '#2a3447',
+    alignItems: 'center',
+  },
+  mealButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  mealButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#b4b4b4',
+  },
+  mealButtonTextActive: {
+    color: '#fff',
+  },
+  mealTimesContainer: {
+    marginTop: 16,
+  },
+  timeInputGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: '#16213e',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  timeLabel: {
+    fontSize: 14,
+    color: '#b4b4b4',
+    fontWeight: '600',
+    flex: 1,
+  },
+  timePickerButton: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 8,
+    padding: 10,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    gap: 8,
+  },
+  timePickerText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  timePickerIcon: {
+    fontSize: 18,
   },
 });
