@@ -9,11 +9,14 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
 import { getUserData, updateUserProfile } from '../services/authService';
+import { getProfilePhoto, setProfilePhoto } from '../services/profilePhotoService';
 import { signOut } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { allowOnlyNumbers, allowNumbersAndOneDecimal, parseBirthDate, formatBirthDate } from '../utils/validation';
@@ -41,6 +44,8 @@ export default function ProfileScreen({ navigation }) {
   });
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedTimeIndex, setSelectedTimeIndex] = useState(null);
+  const [profilePhoto, setProfilePhotoState] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -75,11 +80,48 @@ export default function ProfileScreen({ navigation }) {
           mealsPerDay: mealsPerDay != null ? String(mealsPerDay) : '',
           mealTimes: mealTimesArray.length > 0 ? mealTimesArray : [],
         });
+        const photo = await getProfilePhoto(currentUser.uid);
+        setProfilePhotoState(photo);
       }
     } catch (error) {
       console.error('Profil yükleme hatası:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const pickProfilePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('İzin gerekli', 'Profil fotoğrafı seçmek için galeri erişimine izin verin.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.45,
+        base64: true,
+      });
+      if (result.canceled || !result.assets[0]) return;
+      const base64 = result.assets[0].base64;
+      if (!base64) {
+        Alert.alert('Hata', 'Fotoğraf yüklenemedi.');
+        return;
+      }
+      setUploadingPhoto(true);
+      const saveResult = await setProfilePhoto(auth.currentUser.uid, base64);
+      if (saveResult.success) {
+        setProfilePhotoState(base64);
+        Alert.alert('Başarılı', 'Profil fotoğrafın telefona kaydedildi.');
+      } else {
+        Alert.alert('Hata', saveResult.error || 'Kaydedilemedi.');
+      }
+    } catch (err) {
+      Alert.alert('Hata', err.message || 'Fotoğraf seçilemedi.');
+    } finally {
+      setUploadingPhoto(false);
     }
   };
 
@@ -223,6 +265,36 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
           <Text style={styles.title}>Profilim</Text>
           <View style={styles.placeholder} />
+        </View>
+
+        {/* Profil Fotoğrafı (telefonda saklanır) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Profil Fotoğrafı</Text>
+          <View style={styles.photoSection}>
+            <TouchableOpacity
+              style={styles.avatarTouchable}
+              onPress={pickProfilePhoto}
+              disabled={uploadingPhoto}
+            >
+              {profilePhoto ? (
+                <Image source={{ uri: 'data:image/jpeg;base64,' + profilePhoto }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Ionicons name="person" size={48} color="#666" />
+                </View>
+              )}
+              {uploadingPhoto && (
+                <View style={styles.avatarOverlay}>
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.changePhotoButton} onPress={pickProfilePhoto} disabled={uploadingPhoto}>
+              <Text style={styles.changePhotoButtonText}>
+                {profilePhoto ? 'Fotoğrafı değiştir' : 'Profil fotoğrafı ekle'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Kullanıcı Bilgileri (güncellenemez) */}
@@ -496,6 +568,49 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 16,
+  },
+  photoSection: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  avatarTouchable: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#16213e',
+    borderWidth: 2,
+    borderColor: '#2a3447',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 50,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  changePhotoButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  changePhotoButtonText: {
+    fontSize: 15,
+    color: '#4CAF50',
+    fontWeight: '600',
   },
   readOnlyHint: {
     fontSize: 12,

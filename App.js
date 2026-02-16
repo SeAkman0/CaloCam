@@ -21,6 +21,7 @@ import AddMealScreen from './screens/AddMealScreen';
 import MealDetailScreen from './screens/MealDetailScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import StatsScreen from './screens/StatsScreen';
+import CreateReadyMealScreen from './screens/CreateReadyMealScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -97,31 +98,32 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <NavigationContainer>
-        <Stack.Navigator 
-        initialRouteName={
-          user 
-            ? (onboardingCompleted ? 'MainTabs' : 'Onboarding')
-            : 'Welcome'
-        }
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: '#1a1a2e' }
-        }}
-      >
-        <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Signup" component={SignupScreen} />
-        <Stack.Screen 
-          name="Onboarding" 
-          component={OnboardingScreen}
-        />
-        <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen name="DietDetail" component={DietDetailScreen} />
-        <Stack.Screen name="AddMeal" component={AddMealScreen} />
-        <Stack.Screen name="MealDetail" component={MealDetailScreen} />
-        <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="Stats" component={StatsScreen} />
-      </Stack.Navigator>
+        <Stack.Navigator
+          initialRouteName={
+            user
+              ? (onboardingCompleted ? 'MainTabs' : 'Onboarding')
+              : 'Welcome'
+          }
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#1a1a2e' }
+          }}
+        >
+          <Stack.Screen name="Welcome" component={WelcomeScreen} />
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Signup" component={SignupScreen} />
+          <Stack.Screen
+            name="Onboarding"
+            component={OnboardingScreen}
+          />
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen name="DietDetail" component={DietDetailScreen} />
+          <Stack.Screen name="AddMeal" component={AddMealScreen} />
+          <Stack.Screen name="MealDetail" component={MealDetailScreen} />
+          <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Stats" component={StatsScreen} />
+          <Stack.Screen name="CreateReadyMeal" component={CreateReadyMealScreen} />
+        </Stack.Navigator>
       </NavigationContainer>
     </GestureHandlerRootView>
   );

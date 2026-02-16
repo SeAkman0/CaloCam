@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,26 +6,15 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Modal,
-  Alert,
-  LayoutAnimation,
-  Platform,
-  UIManager,
-  Animated,
+  Image,
 } from 'react-native';
-
-// Android'de LayoutAnimation için (eski sürümler)
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { getUserData } from '../services/authService';
+import { getProfilePhoto } from '../services/profilePhotoService';
 import { getTodayMeals, getTodayTotalCalories } from '../services/mealService';
 import { getTodayWaterIntake, addWaterIntake, calculateDailyWaterGoal, QUICK_ADD_AMOUNTS } from '../services/waterService';
 import { getTodayBurnedCalories } from '../services/exerciseService';
-import { getWidgetOrder, setWidgetOrder, WIDGET_IDS, WIDGET_LABELS } from '../services/dashboardLayoutService';
 import { auth } from '../config/firebase';
 
 export default function DashboardScreen({ navigation }) {
@@ -38,24 +27,7 @@ export default function DashboardScreen({ navigation }) {
   const [waterIntake, setWaterIntake] = useState(0);
   const [waterGoal, setWaterGoal] = useState(2500);
   const [addingWater, setAddingWater] = useState(false);
-  const [widgetOrder, setWidgetOrderState] = useState([...WIDGET_IDS]);
-  const [editMode, setEditMode] = useState(false);
-  const [showAddWidgetModal, setShowAddWidgetModal] = useState(false);
-  const [draggingWidgetId, setDraggingWidgetId] = useState(null);
-  const dragOffset = useRef(new Animated.Value(0)).current;
-  const itemLayoutsRef = useRef([]);
-  const lastTranslationYRef = useRef(0);
-  const dragStartLayoutRef = useRef(null);
-  const dragIndexRef = useRef(0);
-
-  const loadLayout = useCallback(async () => {
-    const order = await getWidgetOrder();
-    setWidgetOrderState(order);
-  }, []);
-
-  useEffect(() => {
-    loadLayout();
-  }, [loadLayout]);
+  const [profilePhoto, setProfilePhoto] = useState(null);
 
   useEffect(() => {
     loadUserData();
@@ -92,6 +64,8 @@ export default function DashboardScreen({ navigation }) {
       } else {
         console.log('❌ Kullanıcı verileri yüklenemedi');
       }
+      const photo = await getProfilePhoto(currentUser.uid);
+      setProfilePhoto(photo);
     } catch (error) {
       console.error('❌ Veri yükleme hatası:', error);
     } finally {
@@ -269,9 +243,10 @@ export default function DashboardScreen({ navigation }) {
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Günaydın';
-    if (hour < 18) return 'İyi günler';
-    return 'İyi akşamlar';
+    if (hour >= 5 && hour < 12) return 'Günaydın';
+    if (hour >= 12 && hour < 17) return 'İyi öğlenler';
+    if (hour >= 17 && hour < 21) return 'İyi akşamlar';
+    return 'İyi geceler';
   };
 
   const netCalories = dailyCalories - burnedCalories;
@@ -279,77 +254,6 @@ export default function DashboardScreen({ navigation }) {
     return targetCalories > 0 ? Math.min((netCalories / targetCalories) * 100, 100) : 0;
   };
   const remaining = targetCalories - netCalories;
-
-  const handleMoveWidget = (index, direction) => {
-    const newOrder = [...widgetOrder];
-    const target = direction === 'up' ? index - 1 : index + 1;
-    if (target < 0 || target >= newOrder.length) return;
-    [newOrder[index], newOrder[target]] = [newOrder[target], newOrder[index]];
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setWidgetOrderState(newOrder);
-  };
-
-  const handleDragEndWithPosition = useCallback((widgetId) => {
-    const fromIndex = widgetOrder.indexOf(widgetId);
-    if (fromIndex < 0) return;
-    const layouts = itemLayoutsRef.current;
-    const startLayout = dragStartLayoutRef.current;
-    const ty = lastTranslationYRef.current;
-    if (!startLayout || !layouts.length) {
-      setDraggingWidgetId(null);
-      return;
-    }
-    const releasedCenterY = startLayout.y + startLayout.height / 2 + ty;
-    let targetIndex = fromIndex;
-    for (let j = 0; j < layouts.length; j++) {
-      if (!layouts[j]) continue;
-      if (releasedCenterY < layouts[j].y) {
-        targetIndex = j;
-        break;
-      }
-      if (releasedCenterY < layouts[j].y + layouts[j].height) {
-        targetIndex = j;
-        break;
-      }
-      targetIndex = j;
-    }
-    targetIndex = Math.max(0, Math.min(targetIndex, layouts.length - 1));
-    if (targetIndex !== fromIndex) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      const newOrder = widgetOrder.filter((_, i) => i !== fromIndex);
-      newOrder.splice(targetIndex, 0, widgetId);
-      setWidgetOrderState(newOrder);
-    }
-    Animated.spring(dragOffset, {
-      toValue: 0,
-      useNativeDriver: true,
-      tension: 80,
-      friction: 12,
-    }).start(() => setDraggingWidgetId(null));
-  }, [widgetOrder]);
-
-  const handleRemoveWidget = (index) => {
-    if (widgetOrder.length <= 1) {
-      Alert.alert('En az bir widget kalmalı', 'Dashboard\'da en az bir alan görünür olmalıdır.');
-      return;
-    }
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    const newOrder = widgetOrder.filter((_, i) => i !== index);
-    setWidgetOrderState(newOrder);
-  };
-
-  const handleAddWidget = (id) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setWidgetOrderState([...widgetOrder, id]);
-    setShowAddWidgetModal(false);
-  };
-
-  const handleFinishEdit = async () => {
-    await setWidgetOrder(widgetOrder);
-    setEditMode(false);
-  };
-
-  const availableToAdd = WIDGET_IDS.filter((id) => !widgetOrder.includes(id));
 
   if (loading) {
     return (
@@ -370,112 +274,38 @@ export default function DashboardScreen({ navigation }) {
           </View>
           <View style={styles.headerButtons}>
             <TouchableOpacity
-              style={styles.editModeButton}
-              onPress={() => (editMode ? handleFinishEdit() : setEditMode(true))}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.editModeButtonText, editMode && styles.editModeButtonTextActive]}>{editMode ? 'Bitti' : 'Düzenle'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={styles.profileButton}
               onPress={() => navigation.navigate('Profile')}
             >
-              <Text style={styles.profileIcon}>👤</Text>
+              {profilePhoto ? (
+                <Image source={{ uri: 'data:image/jpeg;base64,' + profilePhoto }} style={styles.profilePhoto} />
+              ) : (
+                <Text style={styles.profileIcon}>👤</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
-        {editMode && (
-          <View style={styles.editModeHint}>
-            <Text style={styles.editModeHintText}>Üst çubuğu tutup sürükle  •  ↑↓ ile de taşıyabilirsin</Text>
-          </View>
-        )}
-        {widgetOrder.length === 0 ? (
-          <View style={styles.placeholderWidget}>
-            <Text style={styles.placeholderWidgetText}>Widget eklemek için Düzenle → +</Text>
-          </View>
-        ) : (
-          widgetOrder.map((widgetId, index) => (
-            <View
-              key={widgetId}
-              style={styles.widgetWrapper}
-              onLayout={(e) => {
-                const { layout } = e.nativeEvent;
-                itemLayoutsRef.current[index] = { y: layout.y, height: layout.height };
-              }}
-            >
-              <Animated.View
-                style={
-                  draggingWidgetId === widgetId
-                    ? { transform: [{ translateY: dragOffset }], zIndex: 1000, elevation: 10 }
-                    : undefined
-                }
-              >
-              {editMode && (
-                <PanGestureHandler
-                  minDistance={10}
-                  onGestureEvent={(e) => {
-                    const ty = e.nativeEvent.translationY;
-                    dragOffset.setValue(ty);
-                    lastTranslationYRef.current = ty;
-                  }}
-                  onHandlerStateChange={(e) => {
-                    const { state } = e.nativeEvent;
-                    if (state === State.ACTIVE) {
-                      setDraggingWidgetId(widgetId);
-                      dragOffset.setValue(0);
-                      lastTranslationYRef.current = 0;
-                      const layout = itemLayoutsRef.current[index];
-                      dragStartLayoutRef.current = layout ? { y: layout.y, height: layout.height } : null;
-                      dragIndexRef.current = index;
-                    } else if (state === State.END || state === State.CANCELLED) {
-                      handleDragEndWithPosition(widgetId);
-                    }
-                  }}
-                >
-                  <View style={styles.widgetEditBar}>
-                    <View style={styles.dragHandle}>
-                      <Ionicons name="reorder-three" size={24} color="#4FC3F7" />
-                    </View>
-                    <TouchableOpacity
-                    style={[styles.widgetEditBtn, index === 0 && styles.widgetEditBtnDisabled]}
-                    onPress={() => handleMoveWidget(index, 'up')}
-                    disabled={index === 0}
-                  >
-                    <Ionicons name="chevron-up" size={22} color={index === 0 ? '#555' : '#4FC3F7'} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.widgetEditBtn, index === widgetOrder.length - 1 && styles.widgetEditBtnDisabled]}
-                    onPress={() => handleMoveWidget(index, 'down')}
-                    disabled={index === widgetOrder.length - 1}
-                  >
-                    <Ionicons name="chevron-down" size={22} color={index === widgetOrder.length - 1 ? '#555' : '#4FC3F7'} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.widgetRemoveBtn}
-                    onPress={() => handleRemoveWidget(index)}
-                    disabled={widgetOrder.length <= 1}
-                  >
-                    <Ionicons name="remove-circle" size={24} color={widgetOrder.length <= 1 ? '#555' : '#f59e0b'} />
-                  </TouchableOpacity>
-                  <Text style={styles.widgetEditLabel}>{WIDGET_LABELS[widgetId] || widgetId}</Text>
-                  </View>
-                </PanGestureHandler>
-              )}
-              {widgetId === 'calories' && (
+        <View key="calories" style={styles.cardWrapper}>
         <View style={styles.calorieCard}>
           <Text style={styles.calorieLabel}>Günlük Kalori</Text>
           <View style={styles.calorieSummary}>
             <View style={styles.calorieRow}>
-              <Text style={styles.calorieRowLabel}>Aldığın</Text>
-              <Text style={styles.currentCalories}>{dailyCalories} kcal</Text>
+              <Text style={styles.calorieRowLabel} numberOfLines={1}>Aldığın</Text>
+              <View style={styles.calorieRowValue}>
+                <Text style={styles.currentCalories} numberOfLines={1}>{dailyCalories} kcal</Text>
+              </View>
             </View>
             <View style={styles.calorieRow}>
-              <Text style={styles.calorieRowLabel}>Yaktığın</Text>
-              <Text style={styles.burnedCalories}>-{burnedCalories} kcal</Text>
+              <Text style={styles.calorieRowLabel} numberOfLines={1}>Yaktığın</Text>
+              <View style={styles.calorieRowValue}>
+                <Text style={styles.burnedCalories} numberOfLines={1}>-{burnedCalories} kcal</Text>
+              </View>
             </View>
             <View style={[styles.calorieRow, styles.calorieRowNet]}>
-              <Text style={styles.calorieRowLabel}>Net (sende kalan)</Text>
-              <Text style={styles.netCalories}>{netCalories} kcal</Text>
+              <Text style={styles.calorieRowLabel} numberOfLines={1}>Net (sende kalan)</Text>
+              <View style={styles.calorieRowValue}>
+                <Text style={styles.netCalories} numberOfLines={1}>{netCalories} kcal</Text>
+              </View>
             </View>
           </View>
           <Text style={styles.calorieSubtext}>Hedef: {targetCalories} kcal</Text>
@@ -505,9 +335,19 @@ export default function DashboardScreen({ navigation }) {
                   : 'Hedefe ulaşıldı! 🎉'}
             </Text>
           </View>
+
+          {/* Öğün Ekle - aynı widget içinde */}
+          <TouchableOpacity
+            style={styles.addMealButtonInCard}
+            onPress={() => navigation.navigate('AddMeal')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.addMealIcon}>📸</Text>
+            <Text style={styles.addMealText}>Öğün Ekle</Text>
+          </TouchableOpacity>
         </View>
-              )}
-              {widgetId === 'water' && (
+        </View>
+        <View key="water" style={styles.cardWrapper}>
         <View style={styles.waterCard}>
           <View style={styles.waterHeader}>
             <Text style={styles.waterLabel}>💧 Günlük Su Tüketimi</Text>
@@ -552,17 +392,8 @@ export default function DashboardScreen({ navigation }) {
             ))}
           </View>
         </View>
-              )}
-              {widgetId === 'meals' && (
-        <>
-        <TouchableOpacity 
-          style={styles.addMealButton}
-          onPress={() => navigation.navigate('AddMeal')}
-        >
-          <Text style={styles.addMealIcon}>📸</Text>
-          <Text style={styles.addMealText}>Öğün Ekle</Text>
-        </TouchableOpacity>
-
+        </View>
+        <View key="meals" style={styles.cardWrapper}>
         <View style={styles.mealsSection}>
           <Text style={styles.sectionTitle}>Bugünün Öğünleri</Text>
           
@@ -591,11 +422,11 @@ export default function DashboardScreen({ navigation }) {
                   {/* Yiyecek listesi — en fazla 3 madde, fazlası "..." */}
                   {meal.items && meal.items.slice(0, 3).map((item, index) => (
                     <View key={index} style={styles.mealItemRow}>
-                      <Text style={styles.mealItemName}>
+                      <Text style={styles.mealItemName} numberOfLines={2}>
                         • {item.name}
                         {item.portion && <Text style={styles.mealPortion}> ({item.portion})</Text>}
                       </Text>
-                      <Text style={styles.mealItemCalories}>{item.calories} kcal</Text>
+                      <Text style={styles.mealItemCalories} numberOfLines={1}>{item.calories} kcal</Text>
                     </View>
                   ))}
                   {meal.items && meal.items.length > 3 && (
@@ -612,9 +443,8 @@ export default function DashboardScreen({ navigation }) {
             ))
           )}
         </View>
-        </>
-              )}
-              {widgetId === 'exercise' && (
+        </View>
+        <View key="exercise" style={styles.cardWrapper}>
         <View style={styles.exerciseWidgetCard}>
           <Text style={styles.exerciseWidgetLabel}>🔥 Yakılan Kalori</Text>
           <Text style={styles.exerciseWidgetValue}>-{burnedCalories} kcal</Text>
@@ -622,16 +452,18 @@ export default function DashboardScreen({ navigation }) {
             <Text style={styles.exerciseWidgetLinkText}>Egzersiz ekle →</Text>
           </TouchableOpacity>
         </View>
-              )}
-              {widgetId === 'stats' && (
+        </View>
+        <View key="stats" style={styles.cardWrapper}>
         <View style={styles.statsSection}>
           <View style={styles.statsSectionHeader}>
-            <Text style={styles.sectionTitle}>Hızlı Bakış</Text>
+            <View style={styles.statsSectionTitleWrap}>
+              <Text style={styles.sectionTitle} numberOfLines={1}>Hızlı Bakış</Text>
+            </View>
             <TouchableOpacity
               onPress={() => navigation.navigate('Stats')}
               style={styles.viewAllButton}
             >
-              <Text style={styles.viewAllText}>Detaylı İstatistikler</Text>
+              <Text style={styles.viewAllText} numberOfLines={1}>Detaylı İstatistikler</Text>
               <Text style={styles.viewAllIcon}>→</Text>
             </TouchableOpacity>
           </View>
@@ -639,7 +471,7 @@ export default function DashboardScreen({ navigation }) {
             <View style={styles.statCard}>
               <Text style={styles.statIcon}>🎯</Text>
               <Text style={styles.statLabel}>Hedef</Text>
-              <Text style={styles.statValue}>
+              <Text style={styles.statValue} numberOfLines={1}>
                 {userData?.goal === 'lose' ? 'Kilo Ver' : 
                  userData?.goal === 'gain' ? 'Kilo Al' : 'Koru'}
               </Text>
@@ -648,50 +480,18 @@ export default function DashboardScreen({ navigation }) {
             <View style={styles.statCard}>
               <Text style={styles.statIcon}>⚖️</Text>
               <Text style={styles.statLabel}>Kilo</Text>
-              <Text style={styles.statValue}>{userData?.weight} kg</Text>
+              <Text style={styles.statValue} numberOfLines={1}>{userData?.weight} kg</Text>
             </View>
 
             <View style={styles.statCard}>
               <Text style={styles.statIcon}>🍽️</Text>
               <Text style={styles.statLabel}>Öğün Sayısı</Text>
-              <Text style={styles.statValue}>{userData?.mealsPerDay}</Text>
+              <Text style={styles.statValue} numberOfLines={1}>{userData?.mealsPerDay}</Text>
             </View>
           </View>
         </View>
-              )}
-              </Animated.View>
-            </View>
-          ))
-        )}
-        {editMode && availableToAdd.length > 0 && (
-          <TouchableOpacity style={styles.addWidgetButton} onPress={() => setShowAddWidgetModal(true)}>
-            <Ionicons name="add-circle" size={24} color="#4CAF50" style={{ marginRight: 8 }} />
-            <Text style={styles.addWidgetButtonText}>Widget Ekle</Text>
-          </TouchableOpacity>
-        )}
+        </View>
       </ScrollView>
-        {/* Widget Ekle Modal */}
-        <Modal visible={showAddWidgetModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowAddWidgetModal(false)} />
-            <View style={styles.addWidgetModalContent}>
-              <Text style={styles.addWidgetModalTitle}>Widget Ekle</Text>
-              {availableToAdd.map((id) => (
-                <TouchableOpacity
-                  key={id}
-                  style={styles.addWidgetModalItem}
-                  onPress={() => handleAddWidget(id)}
-                >
-                  <Text style={styles.addWidgetModalItemText}>{WIDGET_LABELS[id] || id}</Text>
-                  <Ionicons name="add" size={22} color="#4CAF50" />
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity style={styles.addWidgetModalCancel} onPress={() => setShowAddWidgetModal(false)}>
-                <Text style={styles.addWidgetModalCancelText}>İptal</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
       <StatusBar style="light" />
     </View>
   );
@@ -737,18 +537,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  editModeButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-  },
-  editModeButtonText: {
-    color: '#888',
-    fontSize: 13,
-  },
-  editModeButtonTextActive: {
-    color: '#4CAF50',
-    fontWeight: '600',
+  cardWrapper: {
+    marginBottom: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#16213e',
+    minHeight: 0,
   },
   profileButton: {
     width: 48,
@@ -763,81 +557,10 @@ const styles = StyleSheet.create({
   profileIcon: {
     fontSize: 24,
   },
-  editModeHint: {
-    backgroundColor: 'rgba(79, 195, 247, 0.15)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    marginBottom: 16,
-  },
-  editModeHintText: {
-    fontSize: 13,
-    color: '#4FC3F7',
-    textAlign: 'center',
-  },
-  widgetWrapper: {
-    marginBottom: 24,
-  },
-  widgetEditBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#16213e',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#4FC3F7',
-    gap: 8,
-    minHeight: 48,
-  },
-  dragHandle: {
-    padding: 8,
-    marginLeft: 4,
-  },
-  widgetEditBtn: {
-    padding: 4,
-  },
-  widgetEditBtnDisabled: {
-    opacity: 0.5,
-  },
-  widgetRemoveBtn: {
-    padding: 4,
-  },
-  widgetEditLabel: {
-    fontSize: 13,
-    color: '#b4b4b4',
-    marginLeft: 4,
-    flex: 1,
-  },
-  placeholderWidget: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2a3447',
-    borderStyle: 'dashed',
-  },
-  placeholderWidgetText: {
-    color: '#888',
-    fontSize: 14,
-  },
-  addWidgetButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    borderStyle: 'dashed',
-    marginBottom: 24,
-  },
-  addWidgetButtonText: {
-    color: '#4CAF50',
-    fontSize: 16,
-    fontWeight: 'bold',
+  profilePhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   exerciseWidgetCard: {
     backgroundColor: '#16213e',
@@ -863,61 +586,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4CAF50',
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-    padding: 20,
-  },
-  modalBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  addWidgetModalContent: {
-    backgroundColor: '#16213e',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#2a3447',
-  },
-  addWidgetModalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  addWidgetModalItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: '#1a1a2e',
-    marginBottom: 8,
-  },
-  addWidgetModalItemText: {
-    fontSize: 16,
-    color: '#fff',
-  },
-  addWidgetModalCancel: {
-    marginTop: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  addWidgetModalCancelText: {
-    fontSize: 16,
-    color: '#888',
-  },
   calorieCard: {
     backgroundColor: '#16213e',
     borderRadius: 20,
     padding: 24,
-    marginBottom: 24,
+    marginBottom: 0,
     borderWidth: 1,
     borderColor: '#2a3447',
   },
@@ -945,6 +618,12 @@ const styles = StyleSheet.create({
   calorieRowLabel: {
     fontSize: 14,
     color: '#b4b4b4',
+    flexShrink: 0,
+  },
+  calorieRowValue: {
+    flexShrink: 1,
+    minWidth: 0,
+    alignItems: 'flex-end',
   },
   currentCalories: {
     fontSize: 18,
@@ -998,26 +677,27 @@ const styles = StyleSheet.create({
   remainingTextReached: {
     color: '#ef4444',
   },
-  addMealButton: {
+  addMealButtonInCard: {
     backgroundColor: '#4CAF50',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 14,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
+    marginTop: 16,
+    marginBottom: 0,
     shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 6,
   },
   addMealIcon: {
-    fontSize: 24,
-    marginRight: 12,
+    fontSize: 22,
+    marginRight: 10,
   },
   addMealText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -1105,7 +785,9 @@ const styles = StyleSheet.create({
     color: '#4FC3F7',
   },
   mealsSection: {
-    marginBottom: 32,
+    padding: 20,
+    paddingBottom: 8,
+    minWidth: 0,
   },
   sectionTitle: {
     fontSize: 20,
@@ -1175,11 +857,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+    minWidth: 0,
   },
   mealItemName: {
     fontSize: 14,
     color: '#fff',
     flex: 1,
+    minWidth: 0,
   },
   mealPortion: {
     fontSize: 12,
@@ -1194,6 +878,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#b4b4b4',
     marginLeft: 8,
+    flexShrink: 0,
   },
   mealTotalCalories: {
     marginTop: 12,
@@ -1213,29 +898,40 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
   },
   statsSection: {
-    marginBottom: 32,
+    padding: 20,
+    paddingBottom: 8,
+    minWidth: 0,
   },
   statsSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+    minWidth: 0,
+  },
+  statsSectionTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
   },
   viewAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#16213e',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#4CAF50',
+    flexShrink: 1,
+    minWidth: 0,
   },
   viewAllText: {
     color: '#4CAF50',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     marginRight: 4,
+    flexShrink: 1,
   },
   viewAllIcon: {
     color: '#4CAF50',
@@ -1243,29 +939,32 @@ const styles = StyleSheet.create({
   },
   statsGrid: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
+    minWidth: 0,
   },
   statCard: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: '#16213e',
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#2a3447',
   },
   statIcon: {
-    fontSize: 32,
-    marginBottom: 8,
+    fontSize: 28,
+    marginBottom: 6,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#b4b4b4',
     marginBottom: 4,
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#fff',
+    textAlign: 'center',
   },
 });

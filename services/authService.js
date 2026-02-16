@@ -31,7 +31,6 @@ export const signUpWithEmail = async (email, password, name) => {
       name: name,
       email: email,
       createdAt: new Date().toISOString(),
-      photoURL: user.photoURL || null
     });
 
     return { success: true, user };
@@ -98,7 +97,6 @@ export const signInWithGoogleToken = async (idToken) => {
         uid: user.uid,
         name: user.displayName,
         email: user.email,
-        photoURL: user.photoURL,
         createdAt: new Date().toISOString()
       });
     }
@@ -135,13 +133,12 @@ export const getUserData = async (uid) => {
   }
 };
 
-// Kullanıcı profil verilerini güncelle (onboarding)
+// Kullanıcı profil verilerini güncelle (onboarding veya profil sayfası)
 export const updateUserProfile = async (uid, profileData) => {
   try {
     await setDoc(doc(db, 'users', uid), {
       ...profileData,
       updatedAt: new Date().toISOString(),
-      onboardingCompleted: true,
     }, { merge: true });
 
     return { success: true };
