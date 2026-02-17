@@ -14,14 +14,6 @@ Modern ve kullanıcı dostu bir kalori takip uygulaması. React Native (Expo) ve
 - ✅ Firestore veritabanı entegrasyonu
 - ✅ Kullanıcı verilerinin güvenli saklanması
 
-### 🚧 Geliştirilecek Özellikler:
-- 🔲 Kullanıcı profili ve ilk kurulum soruları (boy, kilo, öğün sayısı)
-- 🔲 Dashboard / Ana ekran
-- 🔲 Manuel öğün ekleme
-- 🔲 Fotoğraf ile öğün ekleme (AI analizi)
-- 🔲 Kalori takibi ve grafikleri
-- 🔲 Bildirimler
-- 🔲 Çoklu cihaz senkronizasyonu
 
 ## 🚀 Kurulum
 
