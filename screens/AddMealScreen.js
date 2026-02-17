@@ -16,7 +16,8 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
-import { addMeal } from '../services/mealService';
+import { addMeal, getTodayMeals } from '../services/mealService';
+import { cancelMealNotification } from '../services/notificationService';
 import { analyzeFoodImage } from '../services/foodAIService';
 import { searchFoodInUSDA, translateFoodName } from '../services/usdaFoodService';
 import { getProductByBarcode } from '../services/openFoodFactsService';
@@ -538,6 +539,22 @@ export default function AddMealScreen({ navigation }) {
         console.log(`✅ Öğün başarıyla eklendi!`);
         console.log(`   ${validItems.length} yiyecek eklendi`);
         console.log(`   Toplam: ${totalCalories} kcal`);
+        console.log(`   Toplam: ${totalCalories} kcal`);
+
+        // Bildirimi iptal et (Sıradaki öğün için)
+        try {
+          const mealsResult = await getTodayMeals(currentUser.uid);
+          if (mealsResult.success) {
+            // Bugün yenen öğün sayısı (bu yeni eklenen dahil)
+            const mealCount = mealsResult.meals.length;
+            // index 0'dan başlar, yani 1. öğün index 0'dır.
+            // mealCount 1 ise, index 0'ı iptal et.
+            await cancelMealNotification(mealCount - 1);
+          }
+        } catch (notifError) {
+          console.log('Bildirim iptal edilemedi:', notifError);
+        }
+
         navigation.goBack();
       } else {
         console.log('❌ Öğün eklenirken hata:', result.error);

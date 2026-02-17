@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
   Image,
+  Switch,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -20,6 +21,7 @@ import { getProfilePhoto, setProfilePhoto } from '../services/profilePhotoServic
 import { signOut } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
 import { allowOnlyNumbers, allowNumbersAndOneDecimal, parseBirthDate, formatBirthDate } from '../utils/validation';
+import { scheduleMealNotifications, cancelAllNotifications, saveNotificationPreference, getNotificationPreference } from '../services/notificationService';
 
 const GOALS = [
   { id: 'lose', label: 'Kilo Ver', icon: '📉' },
@@ -42,6 +44,7 @@ export default function ProfileScreen({ navigation }) {
     mealsPerDay: '',
     mealTimes: [],
   });
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedTimeIndex, setSelectedTimeIndex] = useState(null);
   const [profilePhoto, setProfilePhotoState] = useState(null);
@@ -66,8 +69,8 @@ export default function ProfileScreen({ navigation }) {
         const mealTimesArray = Array.isArray(rawMealTimes)
           ? rawMealTimes
           : (typeof rawMealTimes === 'string' && rawMealTimes.trim()
-              ? rawMealTimes.split(',').map((t) => t.trim()).filter(Boolean)
-              : []);
+            ? rawMealTimes.split(',').map((t) => t.trim()).filter(Boolean)
+            : []);
         const mealsPerDay = result.data.mealsPerDay;
         setUserData({
           name: currentUser.displayName || '',
@@ -80,6 +83,11 @@ export default function ProfileScreen({ navigation }) {
           mealsPerDay: mealsPerDay != null ? String(mealsPerDay) : '',
           mealTimes: mealTimesArray.length > 0 ? mealTimesArray : [],
         });
+
+        // Bildirim tercihini getir
+        const pref = await getNotificationPreference(currentUser.uid);
+        setNotificationsEnabled(pref);
+
         const photo = await getProfilePhoto(currentUser.uid);
         setProfilePhotoState(photo);
       }
@@ -145,6 +153,25 @@ export default function ProfileScreen({ navigation }) {
       mealsPerDay: count.toString(),
       mealTimes: defaultTimes,
     });
+  };
+
+  const checkAndScheduleNotifications = async (times, enabled) => {
+    if (enabled) {
+      await scheduleMealNotifications(times);
+    } else {
+      await cancelAllNotifications();
+    }
+  };
+
+  const handleNotificationToggle = async (value) => {
+    setNotificationsEnabled(value);
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      await saveNotificationPreference(currentUser.uid, value);
+    }
+
+    // Anlık olarak güncelle
+    await checkAndScheduleNotifications(userData.mealTimes, value);
   };
 
   const updateMealTime = (index, time) => {
@@ -215,6 +242,12 @@ export default function ProfileScreen({ navigation }) {
 
       if (result.success) {
         console.log('✅ Profil güncellendi!');
+        // Bildirimleri güncelle (eğer saatler değiştiyse ve bildirimler açıksa)
+        if (notificationsEnabled) {
+          await scheduleMealNotifications(userData.mealTimes);
+        } else {
+          await cancelAllNotifications();
+        }
         navigation.goBack();
       } else {
         console.log('❌ Güncelleme başarısız oldu');
@@ -250,13 +283,13 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
@@ -317,7 +350,7 @@ export default function ProfileScreen({ navigation }) {
         {/* Fiziksel Bilgiler */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Fiziksel Bilgiler</Text>
-          
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Cinsiyet *</Text>
             <View style={styles.genderContainer}>
@@ -354,7 +387,7 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           </View>
-          
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Boy (cm) *</Text>
             <TextInput
@@ -405,11 +438,29 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Bildirim Ayarları */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Bildirim Ayarları</Text>
+          <View style={styles.settingRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.settingLabel}>Öğün Hatırlatıcıları</Text>
+              <Text style={styles.settingHint}>Öğün saatlerinde bildirim al.</Text>
+            </View>
+            <Switch
+              trackColor={{ false: "#767577", true: "#4CAF50" }}
+              thumbColor={notificationsEnabled ? "#fff" : "#f4f3f4"}
+              ios_backgroundColor="#3e3e3e"
+              onValueChange={handleNotificationToggle}
+              value={notificationsEnabled}
+            />
+          </View>
+        </View>
+
         {/* Günlük Öğün */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Günlük Öğün</Text>
           <Text style={styles.readOnlyHint}>Günde kaç öğün yediğinizi ve öğün saatlerinizi seçin.</Text>
-          
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Günlük Öğün Sayısı</Text>
             <View style={styles.mealButtonContainer}>
@@ -464,7 +515,7 @@ export default function ProfileScreen({ navigation }) {
         {/* Hedef */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Hedefiniz</Text>
-          
+
           <View style={styles.goalsContainer}>
             {GOALS.map((goal) => (
               <TouchableOpacity
@@ -509,9 +560,9 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
 
         <View style={{ height: 40 }} />
-      </ScrollView>
+      </ScrollView >
       <StatusBar style="light" />
-    </View>
+    </View >
   );
 }
 
@@ -798,7 +849,27 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   mealTimesContainer: {
-    marginTop: 16,
+    marginTop: 10,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#16213e',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  settingLabel: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  settingHint: {
+    fontSize: 12,
+    color: '#888',
   },
   timeInputGroup: {
     flexDirection: 'row',
@@ -809,6 +880,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: '#2a3447',
+    marginTop: 16,
   },
   timeLabel: {
     fontSize: 14,

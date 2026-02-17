@@ -4,29 +4,32 @@
     "slug": "CaloCam",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/caloicon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "scheme": "calocam",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/caloicon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.calocam.app"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/caloicon.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.calocam.app",
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_MEDIA_IMAGES"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -41,7 +44,18 @@
           "cameraPermission": "CaloCam'in kameraya erişmesine izin ver."
         }
       ],
-      ["expo-camera",{"cameraPermission":"CaloCam'in barkod okutmak için kameraya erişmesine izin ver."}],"expo-web-browser"
-    ]
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "CaloCam'in barkod okutmak için kameraya erişmesine izin ver."
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8143c529-a9e6-4b2a-a1a7-e70e2e8738fa"
+      }
+    }
   }
 }

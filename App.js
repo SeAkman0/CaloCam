@@ -8,6 +8,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './config/firebase';
 import { getUserData } from './services/authService';
+import * as Notifications from 'expo-notifications';
+import { registerForPushNotificationsAsync } from './services/notificationService';
+
+// Bildirim davranışını ayarla
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 import WelcomeScreen from './screens/WelcomeScreen';
 import LoginScreen from './screens/LoginScreen';
@@ -67,6 +78,9 @@ export default function App() {
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
 
   useEffect(() => {
+    // Bildirim izinlerini kontrol et
+    registerForPushNotificationsAsync();
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         // Kullanıcı giriş yapmış, onboarding kontrolü yap
