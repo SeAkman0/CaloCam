@@ -34,10 +34,10 @@ yarn-error.*
 .env*.local
 
 # Firebase config (GÜVENLİK: Config dosyanızı paylaşmayın!)
-# config/firebase.js
+config/firebase.js
 
 # AI API Keys (GÜVENLİK: API anahtarlarınızı paylaşmayın!)
-# config/aiApiKeys.js
+config/aiApiKeys.js
 
 # typescript
 *.tsbuildinfo
