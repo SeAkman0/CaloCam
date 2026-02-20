@@ -12,16 +12,12 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import GoogleIcon from '../components/GoogleIcon';
-import { signUpWithEmail, signInWithGoogleToken } from '../services/authService';
+import { signUpWithEmail, getUserData } from '../services/authService';
 
-// WebBrowser ayarı
-WebBrowser.maybeCompleteAuthSession();
+// WebBrowser ayarı kaldırıldı
+// WebBrowser.maybeCompleteAuthSession();
 
-// Firebase Console'dan alınan Web Client ID
-const EXPO_CLIENT_ID = '508065699314-t1i9fbhlb0kl7m6phpn17tus6ivnmhlq.apps.googleusercontent.com';
+
 
 export default function SignupScreen({ navigation }) {
   const [name, setName] = useState('');
@@ -30,28 +26,7 @@ export default function SignupScreen({ navigation }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Google OAuth hook
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: EXPO_CLIENT_ID,
-    iosClientId: EXPO_CLIENT_ID,
-    androidClientId: EXPO_CLIENT_ID,
-    webClientId: EXPO_CLIENT_ID,
-  });
 
-  // Google OAuth response'u dinle
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      if (authentication?.idToken) {
-        handleGoogleAuth(authentication.idToken);
-      }
-    } else if (response?.type === 'error') {
-      Alert.alert('Hata', 'Google kaydı başarısız oldu');
-      setLoading(false);
-    } else if (response?.type === 'cancel') {
-      setLoading(false);
-    }
-  }, [response]);
 
   const handleSignup = async () => {
     const nameTrim = (name || '').trim();
@@ -85,33 +60,14 @@ export default function SignupScreen({ navigation }) {
     }
   };
 
-  const handleGoogleSignup = async () => {
-    setLoading(true);
-    try {
-      await promptAsync();
-    } catch (error) {
-      setLoading(false);
-      Alert.alert('Hata', 'Google kaydı başlatılamadı');
-    }
-  };
 
-  const handleGoogleAuth = async (idToken) => {
-    const result = await signInWithGoogleToken(idToken);
-    setLoading(false);
-
-    if (result.success) {
-      navigation.navigate('Onboarding');
-    } else {
-      Alert.alert('Hata', result.error || 'Google kaydı başarısız');
-    }
-  };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContainer}
         keyboardShouldPersistTaps="handled"
       >
@@ -170,7 +126,7 @@ export default function SignupScreen({ navigation }) {
             />
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.signupButton, loading && styles.buttonDisabled]}
             onPress={handleSignup}
             disabled={loading}
@@ -182,22 +138,7 @@ export default function SignupScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>veya</Text>
-            <View style={styles.dividerLine} />
-          </View>
 
-          <TouchableOpacity 
-            style={[styles.googleButton, loading && styles.buttonDisabled]}
-            onPress={handleGoogleSignup}
-            disabled={loading}
-          >
-            <View style={styles.googleButtonContent}>
-              <GoogleIcon size={20} />
-              <Text style={styles.googleButtonText}>Google ile Kayıt Ol</Text>
-            </View>
-          </TouchableOpacity>
 
           <View style={styles.loginContainer}>
             <Text style={styles.loginText}>Zaten hesabınız var mı? </Text>

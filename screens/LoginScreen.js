@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TextInput, 
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -12,45 +12,19 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
-import GoogleIcon from '../components/GoogleIcon';
-import { signInWithEmail, signInWithGoogleToken } from '../services/authService';
+import { signInWithEmail, getUserData } from '../services/authService';
 
-// WebBrowser ayarı
-WebBrowser.maybeCompleteAuthSession();
+// WebBrowser ayarı kaldırıldı
+// WebBrowser.maybeCompleteAuthSession();
 
-// Firebase Console'dan alınan Web Client ID
-// TODO: Bu ID'yi Firebase Console > Authentication > Sign-in providers > Google > Web SDK configuration'dan alın
-const EXPO_CLIENT_ID = '508065699314-t1i9fbhlb0kl7m6phpn17tus6ivnmhlq.apps.googleusercontent.com';
+
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Google OAuth hook
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: EXPO_CLIENT_ID,
-    iosClientId: EXPO_CLIENT_ID,
-    androidClientId: EXPO_CLIENT_ID,
-    webClientId: EXPO_CLIENT_ID,
-  });
 
-  // Google OAuth response'u dinle
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      if (authentication?.idToken) {
-        handleGoogleSignIn(authentication.idToken);
-      }
-    } else if (response?.type === 'error') {
-      Alert.alert('Hata', 'Google girişi başarısız oldu');
-      setLoading(false);
-    } else if (response?.type === 'cancel') {
-      setLoading(false);
-    }
-  }, [response]);
 
   const handleLogin = async () => {
     const emailTrim = (email || '').trim();
@@ -65,40 +39,28 @@ export default function LoginScreen({ navigation }) {
     setLoading(false);
 
     if (result.success) {
-      // Onboarding ekranına yönlendir
-      navigation.navigate('Onboarding');
+      // Kullanıcı verilerini kontrol et
+      const userResult = await getUserData(result.user.uid);
+      if (userResult.success && userResult.data.onboardingCompleted) {
+        // Profil tamamlanmışsa ana sayfaya
+        navigation.replace('MainTabs');
+      } else {
+        // Tamamlanmamışsa onboarding sayfasına
+        navigation.navigate('Onboarding');
+      }
     } else {
       Alert.alert('Hata', result.error);
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      await promptAsync();
-    } catch (error) {
-      setLoading(false);
-      Alert.alert('Hata', 'Google girişi başlatılamadı');
-    }
-  };
 
-  const handleGoogleSignIn = async (idToken) => {
-    const result = await signInWithGoogleToken(idToken);
-    setLoading(false);
-
-    if (result.success) {
-      navigation.navigate('Onboarding');
-    } else {
-      Alert.alert('Hata', result.error || 'Google girişi başarısız');
-    }
-  };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContainer}
         keyboardShouldPersistTaps="handled"
       >
@@ -137,7 +99,7 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.forgotPasswordText}>Şifremi Unuttum?</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.loginButton, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
@@ -149,22 +111,7 @@ export default function LoginScreen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>veya</Text>
-            <View style={styles.dividerLine} />
-          </View>
 
-          <TouchableOpacity 
-            style={[styles.googleButton, loading && styles.buttonDisabled]}
-            onPress={handleGoogleLogin}
-            disabled={loading}
-          >
-            <View style={styles.googleButtonContent}>
-              <GoogleIcon size={20} />
-              <Text style={styles.googleButtonText}>Google ile Giriş Yap</Text>
-            </View>
-          </TouchableOpacity>
 
           <View style={styles.signupContainer}>
             <Text style={styles.signupText}>Hesabınız yok mu? </Text>
