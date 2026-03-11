@@ -8,10 +8,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
-  Alert,
   Image,
   Switch,
 } from 'react-native';
+import { useAlert } from '../context/AlertContext';
 import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,6 +30,7 @@ const GOALS = [
 ];
 
 export default function ProfileScreen({ navigation }) {
+  const { showAlert } = useAlert();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showBirthDatePicker, setShowBirthDatePicker] = useState(false);
@@ -102,7 +103,7 @@ export default function ProfileScreen({ navigation }) {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('İzin gerekli', 'Profil fotoğrafı seçmek için galeri erişimine izin verin.');
+        showAlert('İzin gerekli', 'Profil fotoğrafı seçmek için galeri erişimine izin verin.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -115,19 +116,19 @@ export default function ProfileScreen({ navigation }) {
       if (result.canceled || !result.assets[0]) return;
       const base64 = result.assets[0].base64;
       if (!base64) {
-        Alert.alert('Hata', 'Fotoğraf yüklenemedi.');
+        showAlert('Hata', 'Fotoğraf yüklenemedi.');
         return;
       }
       setUploadingPhoto(true);
       const saveResult = await setProfilePhoto(auth.currentUser.uid, base64);
       if (saveResult.success) {
         setProfilePhotoState(base64);
-        Alert.alert('Başarılı', 'Profil fotoğrafın telefona kaydedildi.');
+        showAlert('Başarılı', 'Profil fotoğrafın telefona kaydedildi.');
       } else {
-        Alert.alert('Hata', saveResult.error || 'Kaydedilemedi.');
+        showAlert('Hata', saveResult.error || 'Kaydedilemedi.');
       }
     } catch (err) {
-      Alert.alert('Hata', err.message || 'Fotoğraf seçilemedi.');
+      showAlert('Hata', err.message || 'Fotoğraf seçilemedi.');
     } finally {
       setUploadingPhoto(false);
     }
@@ -207,21 +208,21 @@ export default function ProfileScreen({ navigation }) {
     const weightStr = (userData.weight || '').trim();
     const birthStr = (userData.birthDate || '').trim();
     if (!userData.gender || !heightStr || !weightStr || !birthStr) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen cinsiyet, boy, kilo ve doğum tarihi alanlarını doldurun. Boş bırakamazsınız.');
+      showAlert('Girdinizi Kontrol Edin', 'Lütfen cinsiyet, boy, kilo ve doğum tarihi alanlarını doldurun. Boş bırakamazsınız.');
       return;
     }
     const heightNum = parseFloat(heightStr);
     const weightNum = parseFloat(weightStr);
     if (isNaN(heightNum) || heightNum < 100 || heightNum > 250) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Boy 100–250 cm arasında olmalıdır. Lütfen geçerli bir değer girin.');
+      showAlert('Girdinizi Kontrol Edin', 'Boy 100–250 cm arasında olmalıdır. Lütfen geçerli bir değer girin.');
       return;
     }
     if (isNaN(weightNum) || weightNum < 30 || weightNum > 300) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Kilo 30–300 kg arasında olmalıdır. Lütfen geçerli bir değer girin.');
+      showAlert('Girdinizi Kontrol Edin', 'Kilo 30–300 kg arasında olmalıdır. Lütfen geçerli bir değer girin.');
       return;
     }
     if (!userData.mealsPerDay || !userData.mealTimes || userData.mealTimes.length === 0) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen günlük öğün sayısını seçin.');
+      showAlert('Girdinizi Kontrol Edin', 'Lütfen günlük öğün sayısını seçin.');
       return;
     }
 

@@ -8,11 +8,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 import { getDiets, seedDietsToFirebase, getLocalDiets } from '../services/dietService';
+
+const CATEGORIES = ['Hepsi', 'Popüler', 'Kilo Verme', 'Bitkisel', 'Sağlık'];
 
 export default function DietListsScreen({ navigation }) {
   const [diets, setDiets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState('Hepsi');
 
   const loadDiets = async () => {
     setLoading(true);
@@ -36,6 +40,10 @@ export default function DietListsScreen({ navigation }) {
 
   const tags = (diet) => Array.isArray(diet.tags) ? diet.tags : [];
 
+  const filteredDiets = selectedCategory === 'Hepsi'
+    ? diets
+    : diets.filter(d => d.category === selectedCategory);
+
   return (
     <>
       <StatusBar style="light" />
@@ -51,36 +59,80 @@ export default function DietListsScreen({ navigation }) {
             <Text style={styles.loadingText}>Diyetler yükleniyor...</Text>
           </View>
         ) : (
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {diets.map((diet) => (
-              <TouchableOpacity
-                key={diet.id}
-                style={styles.card}
-                activeOpacity={0.8}
-                onPress={() => navigation.navigate('DietDetail', { diet })}
+          <View style={{ flex: 1 }}>
+            {/* Kategoriler */}
+            <View style={styles.categoryWrap}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryScroll}
               >
-                <View style={styles.cardIconWrap}>
-                  <Text style={styles.cardIcon}>{diet.icon || '🥗'}</Text>
-                </View>
-                <View style={styles.cardBody}>
-                  <Text style={styles.cardTitle}>{diet.name}</Text>
-                  <Text style={styles.cardDesc}>{diet.shortDesc || ''}</Text>
-                  <Text style={styles.cardCal}>{diet.calorieRange || ''}</Text>
-                  <View style={styles.tagRow}>
-                    {tags(diet).map((tag) => (
-                      <View key={tag} style={styles.tag}>
-                        <Text style={styles.tagText}>{tag}</Text>
-                      </View>
-                    ))}
+                {CATEGORIES.map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.categoryChip,
+                      selectedCategory === cat && styles.categoryChipActive
+                    ]}
+                    onPress={() => setSelectedCategory(cat)}
+                  >
+                    <Text style={[
+                      styles.categoryChipText,
+                      selectedCategory === cat && styles.categoryChipTextActive
+                    ]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {filteredDiets.map((diet) => (
+                <TouchableOpacity
+                  key={diet.id}
+                  style={styles.card}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('DietDetail', { diet })}
+                >
+                  <View style={styles.cardIconWrap}>
+                    <Text style={styles.cardIcon}>{diet.icon || '🥗'}</Text>
                   </View>
+                  <View style={styles.cardBody}>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={styles.cardTitle}>{diet.name}</Text>
+                      <View style={styles.ratingBox}>
+                        <Ionicons name="star" size={14} color="#FFD700" />
+                        <Text style={styles.ratingText}>{diet.rating || 0}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.cardDesc} numberOfLines={1}>{diet.shortDesc || ''}</Text>
+                    <View style={styles.cardMeta}>
+                      <Text style={styles.cardCal}>{diet.calorieRange || ''}</Text>
+                      <Text style={styles.dot}>•</Text>
+                      <Text style={styles.cardReviews}>{diet.reviews || 0} yorum</Text>
+                    </View>
+                    <View style={styles.tagRow}>
+                      {tags(diet).map((tag) => (
+                        <View key={tag} style={styles.tag}>
+                          <Text style={styles.tagText}>{tag}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {filteredDiets.length === 0 && (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>Bu kategoride diyet bulunamadı.</Text>
                 </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+              )}
+            </ScrollView>
+          </View>
         )}
       </View>
     </>
@@ -118,6 +170,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9ca3af',
   },
+  categoryWrap: {
+    marginBottom: 16,
+  },
+  categoryScroll: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#252542',
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  categoryChipActive: {
+    backgroundColor: '#4FC3F7',
+    borderColor: '#4FC3F7',
+  },
+  categoryChipText: {
+    fontSize: 14,
+    color: '#9ca3af',
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
   scroll: {
     flex: 1,
   },
@@ -128,41 +207,76 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     backgroundColor: '#252542',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#2a3447',
   },
   cardIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 16,
     backgroundColor: '#2a3447',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
+    marginRight: 16,
   },
   cardIcon: {
-    fontSize: 26,
+    fontSize: 28,
   },
   cardBody: {
     flex: 1,
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   cardTitle: {
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#fff',
-    marginBottom: 4,
+  },
+  ratingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  ratingText: {
+    color: '#FFD700',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   cardDesc: {
     fontSize: 13,
     color: '#b4b4b4',
-    marginBottom: 4,
+    marginBottom: 6,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   cardCal: {
     fontSize: 12,
     color: '#4FC3F7',
-    marginBottom: 8,
+    fontWeight: '600',
+  },
+  dot: {
+    color: '#4b5563',
+    marginHorizontal: 6,
+    fontSize: 12,
+  },
+  cardReviews: {
+    fontSize: 12,
+    color: '#9ca3af',
   },
   tagRow: {
     flexDirection: 'row',
@@ -170,13 +284,23 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tag: {
-    backgroundColor: '#2a3447',
+    backgroundColor: '#1a1a2e',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2a3447',
   },
   tagText: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#9ca3af',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingTop: 40,
+  },
+  emptyText: {
+    color: '#6b7280',
+    fontSize: 14,
   },
 });

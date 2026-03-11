@@ -2,14 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, LogBox } from 'react-native';
+
+// Expo Go'un push bildirimi uyarısını gizle (Local bildirimleri etkilemez)
+LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './config/firebase';
 import { getUserData } from './services/authService';
 import * as Notifications from 'expo-notifications';
-import { registerForPushNotificationsAsync } from './services/notificationService';
+import { setupLocalNotificationsAsync } from './services/notificationService';
+import { AlertProvider } from './context/AlertContext';
 
 // Bildirim davranışını ayarla
 Notifications.setNotificationHandler({
@@ -79,7 +83,7 @@ export default function App() {
 
   useEffect(() => {
     // Bildirim izinlerini kontrol et
-    registerForPushNotificationsAsync();
+    setupLocalNotificationsAsync();
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -111,34 +115,36 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NavigationContainer>
-        <Stack.Navigator
-          initialRouteName={
-            user
-              ? (onboardingCompleted ? 'MainTabs' : 'Onboarding')
-              : 'Welcome'
-          }
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: '#1a1a2e' }
-          }}
-        >
-          <Stack.Screen name="Welcome" component={WelcomeScreen} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen
-            name="Onboarding"
-            component={OnboardingScreen}
-          />
-          <Stack.Screen name="MainTabs" component={MainTabs} />
-          <Stack.Screen name="DietDetail" component={DietDetailScreen} />
-          <Stack.Screen name="AddMeal" component={AddMealScreen} />
-          <Stack.Screen name="MealDetail" component={MealDetailScreen} />
-          <Stack.Screen name="Profile" component={ProfileScreen} />
-          <Stack.Screen name="Stats" component={StatsScreen} />
-          <Stack.Screen name="CreateReadyMeal" component={CreateReadyMealScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <AlertProvider>
+        <NavigationContainer>
+          <Stack.Navigator
+            initialRouteName={
+              user
+                ? (onboardingCompleted ? 'MainTabs' : 'Onboarding')
+                : 'Welcome'
+            }
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: '#1a1a2e' }
+            }}
+          >
+            <Stack.Screen name="Welcome" component={WelcomeScreen} />
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Signup" component={SignupScreen} />
+            <Stack.Screen
+              name="Onboarding"
+              component={OnboardingScreen}
+            />
+            <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen name="DietDetail" component={DietDetailScreen} />
+            <Stack.Screen name="AddMeal" component={AddMealScreen} />
+            <Stack.Screen name="MealDetail" component={MealDetailScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="Stats" component={StatsScreen} />
+            <Stack.Screen name="CreateReadyMeal" component={CreateReadyMealScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </AlertProvider>
     </GestureHandlerRootView>
   );
 }

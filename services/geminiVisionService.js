@@ -21,23 +21,29 @@ export const detectFoodWithGemini = async (base64Image) => {
     const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
 
     // Gemini'ye gönderilecek prompt
-    const prompt = `Bu resimde hangi yemekler var? 
+    const prompt = `Bu resimde hangi yemekler/yiyecekler var?
 
 ÇOK ÖNEMLİ KURALLAR:
-1. Her yiyeceği AYRI AYRI listele!
-2. Kombine yemekleri ayır (örn: "sucuklu yumurta" → "Sucuk" ve "Yumurta" şeklinde iki ayrı satır)
-3. "Peynirli omlet" → "Peynir" ve "Yumurta" (omlet için)
-4. "Menemen" → "Yumurta", "Domates", "Biber" ayrı ayrı
-5. Tabakta gördüğün HER yiyeceği say ve listele
+1. Her yemeği/yiyeceği BİR BÜTÜN olarak listele! Malzemelerine AYIRMA!
+2. "Menemen" → sadece "Menemen" yaz (yumurta, domates, biber diye AYIRMA)
+3. "Sucuklu yumurta" → sadece "Sucuklu Yumurta" yaz (tek satır)
+4. "Trileçe" → sadece "Trileçe" yaz
+5. Tabakta gördüğün her FARKLI YEMEĞİ say ve listele
+6. Yanındaki ekmek, salata, içecek gibi AYRI yiyecekleri AYRI satır olarak yaz
+7. Toplam gramajı TAHMİN et (tabakta ne kadar var gibi görünüyorsa)
 
 Format:
-YiyecekAdı|tahmini_gramaj|güven_skoru
+YemekAdı|tahmini_gramaj|güven_skoru
 
 Örnek doğru format:
-Sucuk|50g|0.9
-Yumurta|60g|0.85
-Ekmek|100g|0.9
-Domates|80g|0.8
+Menemen|150g|0.9
+Ekmek|80g|0.85
+Çay|200g|0.8
+
+YANLIŞ format (BÖYLE YAPMA):
+Yumurta|60g|0.9
+Domates|40g|0.8
+Biber|30g|0.7
 
 Sadece listeyi ver, açıklama ekleme. Her satır bir yemek olsun.`;
 
@@ -80,10 +86,10 @@ Sadece listeyi ver, açıklama ekleme. Her satır bir yemek olsun.`;
     }
 
     const data = await response.json();
-    
+
     // Gemini'nin cevabını parse et
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    
+
     if (!text) {
       throw new Error('Gemini\'den cevap alınamadı');
     }
@@ -117,7 +123,7 @@ const parseFoodList = (text) => {
   for (const line of lines) {
     // Format: Yemek|150g|0.85
     const parts = line.split('|').map(p => p.trim());
-    
+
     if (parts.length >= 2) {
       const name = parts[0];
       const gramsStr = parts[1].replace(/[^\d]/g, ''); // Sadece rakamları al
@@ -149,7 +155,7 @@ export const imageToBase64 = async (uri) => {
   try {
     const response = await fetch(uri);
     const blob = await response.blob();
-    
+
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result);

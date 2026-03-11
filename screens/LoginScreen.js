@@ -8,9 +8,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
   ActivityIndicator
 } from 'react-native';
+import { useAlert } from '../context/AlertContext';
 import { StatusBar } from 'expo-status-bar';
 import { signInWithEmail, getUserData } from '../services/authService';
 
@@ -20,6 +20,7 @@ import { signInWithEmail, getUserData } from '../services/authService';
 
 
 export default function LoginScreen({ navigation }) {
+  const { showAlert } = useAlert();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,7 +31,7 @@ export default function LoginScreen({ navigation }) {
     const emailTrim = (email || '').trim();
     const passwordTrim = (password || '').trim();
     if (!emailTrim || !passwordTrim) {
-      Alert.alert('Girdinizi Kontrol Edin', 'E-posta ve şifre alanlarını doldurun. Boş bırakamazsınız.');
+      showAlert('Girdinizi Kontrol Edin', 'E-posta ve şifre alanlarını doldurun. Boş bırakamazsınız.');
       return;
     }
 
@@ -49,7 +50,7 @@ export default function LoginScreen({ navigation }) {
         navigation.navigate('Onboarding');
       }
     } else {
-      Alert.alert('Hata', result.error);
+      showAlert('Hata', result.error);
     }
   };
 

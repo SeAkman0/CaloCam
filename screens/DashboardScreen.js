@@ -11,13 +11,16 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { getUserData } from '../services/authService';
+import { useAlert } from '../context/AlertContext';
 import { getProfilePhoto } from '../services/profilePhotoService';
 import { getTodayMeals, getTodayTotalCalories } from '../services/mealService';
-import { getTodayWaterIntake, addWaterIntake, calculateDailyWaterGoal, QUICK_ADD_AMOUNTS } from '../services/waterService';
+import { getTodayWaterIntake, addWaterIntake, calculateDailyWaterGoal, QUICK_ADD_AMOUNTS, undoLastWaterIntake, getCurrentSeasonInfo } from '../services/waterService';
 import { getTodayBurnedCalories } from '../services/exerciseService';
+import { EXAMPLE_DIETS } from '../data/exampleDiets';
 import { auth } from '../config/firebase';
 
 export default function DashboardScreen({ navigation }) {
+  const { showAlert } = useAlert();
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
   const [dailyCalories, setDailyCalories] = useState(0);
@@ -28,6 +31,7 @@ export default function DashboardScreen({ navigation }) {
   const [waterGoal, setWaterGoal] = useState(2500);
   const [addingWater, setAddingWater] = useState(false);
   const [profilePhoto, setProfilePhoto] = useState(null);
+  const [activeDiet, setActiveDiet] = useState(null);
 
   useEffect(() => {
     loadUserData();
@@ -58,7 +62,16 @@ export default function DashboardScreen({ navigation }) {
       const result = await getUserData(currentUser.uid);
       if (result.success) {
         setUserData(result.data);
-        calculateTargetCalories(result.data);
+
+        let diet = null;
+        if (result.data.activeDietId) {
+          diet = EXAMPLE_DIETS.find(d => d.id === result.data.activeDietId);
+          setActiveDiet(diet);
+        } else {
+          setActiveDiet(null);
+        }
+
+        calculateTargetCalories(result.data, diet);
         calculateWaterGoal(result.data);
         console.log('✅ Kullanıcı verileri yüklendi');
       } else {
@@ -144,7 +157,7 @@ export default function DashboardScreen({ navigation }) {
 
   const handleQuickAddWater = async (amount) => {
     if (addingWater) return;
-    
+
     setAddingWater(true);
     try {
       const currentUser = auth.currentUser;
@@ -152,8 +165,32 @@ export default function DashboardScreen({ navigation }) {
 
       const result = await addWaterIntake(currentUser.uid, amount);
       if (result.success) {
-        setWaterIntake(waterIntake + amount);
+        const newTotal = waterIntake + amount;
+        setWaterIntake(newTotal);
         console.log(`✅ ${amount}ml su eklendi`);
+
+        // Hedefe ulaşıldı mı kontrolü
+        if (newTotal >= waterGoal && waterIntake < waterGoal) {
+          showAlert(
+            'Harika!',
+            'Günlük su hedefine ulaştın! 💧🎉 Vücudun sana teşekkür ediyor.',
+            [{ text: 'Tamam' }]
+          );
+        } else if (newTotal >= waterGoal * 1.25 && newTotal < waterGoal * 1.5 && waterIntake < waterGoal * 1.25) {
+          // %125 sınırı - Hafif uyarı
+          showAlert(
+            'Yeterli Seviye!',
+            'Günlük su hedefini aştın. 🥤 Vücudun yeterince su aldı, artık daha fazlasına gerek kalmamış olabilir. Dikkatli ol!',
+            [{ text: 'Anladım' }]
+          );
+        } else if (newTotal >= waterGoal * 1.5 && waterIntake < waterGoal * 1.5) {
+          // %150 sınırı - Sert uyarı
+          showAlert(
+            'Durma Vakti!',
+            'Yeter, daha fazla içme! 🛑 Su değerin oldukça yüksek. Fazla su tüketimi böbreklerini yorabilir. Bugünlük su defterini kapatmalısın.',
+            [{ text: 'Tamam, içmiyorum' }]
+          );
+        }
       }
     } catch (error) {
       console.error('❌ Su ekleme hatası:', error);
@@ -162,7 +199,47 @@ export default function DashboardScreen({ navigation }) {
     }
   };
 
-  const calculateTargetCalories = (data) => {
+  const handleUndoWater = async () => {
+    if (addingWater || waterIntake <= 0) return;
+
+    showAlert(
+      'Geri Al',
+      'Son içilen suyu geri almak istediğine emin misin?',
+      [
+        { text: 'Vazgeç', style: 'cancel' },
+        {
+          text: 'Geri Al',
+          onPress: async () => {
+            setAddingWater(true);
+            try {
+              const currentUser = auth.currentUser;
+              if (!currentUser) return;
+
+              const result = await undoLastWaterIntake(currentUser.uid);
+              if (result.success) {
+                setWaterIntake(Math.max(0, waterIntake - result.removedAmount));
+                console.log(`✅ ${result.removedAmount}ml su geri alındı`);
+              } else {
+                showAlert('Hata', result.error || 'Su geri alınamadı');
+              }
+            } catch (error) {
+              console.error('❌ Su geri alma hatası:', error);
+            } finally {
+              setAddingWater(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const calculateTargetCalories = (data, diet) => {
+    // Eğer aktif bir diyet varsa ve hedef kalorisi belliyse (Aralıklı Oruç hariç olabilir)
+    if (diet && diet.targetCalories) {
+      setTargetCalories(diet.targetCalories);
+      return;
+    }
+
     // Veri kontrolü
     if (!data || !data.weight || !data.height || !data.birthDate) {
       setTargetCalories(2000); // Varsayılan değer
@@ -171,20 +248,19 @@ export default function DashboardScreen({ navigation }) {
 
     // Yaş hesaplama
     const age = calculateAge(data.birthDate);
-    
+
     // BMR (Basal Metabolic Rate) hesaplama - Harris-Benedict formülü
-    // Erkek için: BMR = 88.362 + (13.397 × kilo) + (4.799 × boy) - (5.677 × yaş)
     const weight = parseFloat(data.weight) || 70;
     const height = parseFloat(data.height) || 170;
-    
+
     const bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
-    
+
     // Aktivite faktörü (1.2 = sedanter)
     let target = bmr * 1.2;
 
     // Hedefe göre ayarlama
     if (data.goal === 'lose') {
-      target -= 500; // Günlük 500 kalori açığı (haftada ~0.5kg)
+      target -= 500; // Günlük 500 kalori açığı
     } else if (data.goal === 'gain') {
       target += 500; // Günlük 500 kalori fazlası
     }
@@ -194,26 +270,26 @@ export default function DashboardScreen({ navigation }) {
 
   const calculateAge = (birthDate) => {
     if (!birthDate) return 30; // Varsayılan yaş
-    
+
     // Doğum tarihini parse et (GG/AA/YYYY formatında)
     const parts = birthDate.split('/');
     if (parts.length !== 3) return 30;
-    
+
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1; // JavaScript ayları 0-11 arası
     const year = parseInt(parts[2], 10);
-    
+
     const birth = new Date(year, month, day);
     const today = new Date();
-    
+
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
-    
+
     // Doğum günü henüz gelmemişse 1 yaş düş
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
       age--;
     }
-    
+
     return age > 0 ? age : 30; // Geçersiz tarih için varsayılan
   };
 
@@ -250,6 +326,7 @@ export default function DashboardScreen({ navigation }) {
   };
 
   const netCalories = dailyCalories - burnedCalories;
+  const isWaterLimitReached = waterIntake >= waterGoal * 1.5;
   const getProgress = () => {
     return targetCalories > 0 ? Math.min((netCalories / targetCalories) * 100, 100) : 0;
   };
@@ -286,210 +363,292 @@ export default function DashboardScreen({ navigation }) {
           </View>
         </View>
         <View key="calories" style={styles.cardWrapper}>
-        <View style={styles.calorieCard}>
-          <Text style={styles.calorieLabel}>Günlük Kalori</Text>
-          <View style={styles.calorieSummary}>
-            <View style={styles.calorieRow}>
-              <Text style={styles.calorieRowLabel} numberOfLines={1}>Aldığın</Text>
-              <View style={styles.calorieRowValue}>
-                <Text style={styles.currentCalories} numberOfLines={1}>{dailyCalories} kcal</Text>
+          <View style={styles.calorieCard}>
+            <Text style={styles.calorieLabel}>Günlük Kalori</Text>
+            <View style={styles.calorieSummary}>
+              <View style={styles.calorieRow}>
+                <Text style={styles.calorieRowLabel} numberOfLines={1}>Aldığın</Text>
+                <View style={styles.calorieRowValue}>
+                  <Text style={styles.currentCalories} numberOfLines={1}>{dailyCalories} kcal</Text>
+                </View>
+              </View>
+              <View style={styles.calorieRow}>
+                <Text style={styles.calorieRowLabel} numberOfLines={1}>Yaktığın</Text>
+                <View style={styles.calorieRowValue}>
+                  <Text style={styles.burnedCalories} numberOfLines={1}>-{burnedCalories} kcal</Text>
+                </View>
+              </View>
+              <View style={[styles.calorieRow, styles.calorieRowNet]}>
+                <Text style={styles.calorieRowLabel} numberOfLines={1}>Net (sende kalan)</Text>
+                <View style={styles.calorieRowValue}>
+                  <Text style={styles.netCalories} numberOfLines={1}>{netCalories} kcal</Text>
+                </View>
               </View>
             </View>
-            <View style={styles.calorieRow}>
-              <Text style={styles.calorieRowLabel} numberOfLines={1}>Yaktığın</Text>
-              <View style={styles.calorieRowValue}>
-                <Text style={styles.burnedCalories} numberOfLines={1}>-{burnedCalories} kcal</Text>
-              </View>
-            </View>
-            <View style={[styles.calorieRow, styles.calorieRowNet]}>
-              <Text style={styles.calorieRowLabel} numberOfLines={1}>Net (sende kalan)</Text>
-              <View style={styles.calorieRowValue}>
-                <Text style={styles.netCalories} numberOfLines={1}>{netCalories} kcal</Text>
-              </View>
-            </View>
-          </View>
-          <Text style={styles.calorieSubtext}>Hedef: {targetCalories} kcal</Text>
+            <Text style={styles.calorieSubtext}>Hedef: {targetCalories} kcal</Text>
 
-          {/* Progress Bar */}
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBarBg}>
-              <View 
-                style={[
-                  styles.progressBarFill, 
-                  { width: `${Math.max(0, Math.min(getProgress(), 100))}%` }
-                ]} 
-              />
-            </View>
-            <Text style={styles.progressText}>
-              {Math.round(getProgress())}% tamamlandı
-            </Text>
-          </View>
-
-          {/* Kalan Kalori */}
-          <View style={styles.remainingContainer}>
-            <Text style={[styles.remainingText, remaining < 0 && styles.remainingTextReached]}>
-              {remaining > 0 
-                ? `${remaining} kcal kaldı` 
-                : remaining < 0 
-                  ? `${Math.abs(remaining)} kcal fazla`
-                  : 'Hedefe ulaşıldı! 🎉'}
-            </Text>
-          </View>
-
-          {/* Öğün Ekle - aynı widget içinde */}
-          <TouchableOpacity
-            style={styles.addMealButtonInCard}
-            onPress={() => navigation.navigate('AddMeal')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.addMealIcon}>📸</Text>
-            <Text style={styles.addMealText}>Öğün Ekle</Text>
-          </TouchableOpacity>
-        </View>
-        </View>
-        <View key="water" style={styles.cardWrapper}>
-        <View style={styles.waterCard}>
-          <View style={styles.waterHeader}>
-            <Text style={styles.waterLabel}>💧 Günlük Su Tüketimi</Text>
-            <Text style={styles.waterGoalText}>
-              Hedef: {waterGoal}ml ({(waterGoal/1000).toFixed(1)}L)
-            </Text>
-          </View>
-
-          {/* Progress Bar */}
-          <View style={styles.waterProgressRow}>
-            <View style={styles.waterProgressContainer}>
-              <View style={styles.waterProgressBg}>
-                <View 
+            {/* Progress Bar */}
+            <View style={styles.progressBarContainer}>
+              <View style={styles.progressBarBg}>
+                <View
                   style={[
-                    styles.waterProgressFill, 
-                    { width: `${Math.min((waterIntake / waterGoal) * 100, 100)}%` }
-                  ]} 
+                    styles.progressBarFill,
+                    { width: `${Math.max(0, Math.min(getProgress(), 100))}%` }
+                  ]}
                 />
               </View>
-              <View style={styles.waterStatsRow}>
-                <Text style={styles.waterCurrentText}>{waterIntake}ml</Text>
-                <Text style={styles.waterPercentText}>
-                  {Math.round((waterIntake / waterGoal) * 100)}%
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Hızlı Ekle Butonları */}
-          <View style={styles.quickAddContainer}>
-            {QUICK_ADD_AMOUNTS.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.quickAddButton}
-                onPress={() => handleQuickAddWater(item.amount)}
-                disabled={addingWater}
-              >
-                <Text style={styles.quickAddIcon}>{item.icon}</Text>
-                <Text style={styles.quickAddLabel}>{item.label}</Text>
-                <Text style={styles.quickAddAmount}>{item.amount}ml</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-        </View>
-        <View key="meals" style={styles.cardWrapper}>
-        <View style={styles.mealsSection}>
-          <Text style={styles.sectionTitle}>Bugünün Öğünleri</Text>
-          
-          {todayMeals.length === 0 ? (
-            <View style={styles.emptyMeals}>
-              <Text style={styles.emptyMealsIcon}>🍽️</Text>
-              <Text style={styles.emptyMealsText}>Henüz öğün eklenmedi</Text>
-              <Text style={styles.emptyMealsSubtext}>
-                Günlük takibine başlamak için öğün ekle
+              <Text style={styles.progressText}>
+                {Math.round(getProgress())}% tamamlandı
               </Text>
             </View>
-          ) : (
-            sortedTodayMeals.map((meal) => (
-              <TouchableOpacity 
-                key={meal.id} 
-                style={styles.mealCard}
-                onPress={() => navigation.navigate('MealDetail', { meal })}
-                activeOpacity={0.7}
-              >
-                <View style={styles.mealInfo}>
-                  <View style={styles.mealHeader}>
-                    <Text style={styles.mealType}>{getMealTypeLabel(meal.mealType)}</Text>
-                    <Text style={styles.mealTime}>{formatMealTime(meal.date)}</Text>
-                  </View>
-                  
-                  {/* Yiyecek listesi — en fazla 3 madde, fazlası "..." */}
-                  {meal.items && meal.items.slice(0, 3).map((item, index) => (
-                    <View key={index} style={styles.mealItemRow}>
-                      <Text style={styles.mealItemName} numberOfLines={2}>
-                        • {item.name}
-                        {item.portion && <Text style={styles.mealPortion}> ({item.portion})</Text>}
-                      </Text>
-                      <Text style={styles.mealItemCalories} numberOfLines={1}>{item.calories} kcal</Text>
+
+            {/* Kalan Kalori */}
+            <View style={styles.remainingContainer}>
+              <Text style={[styles.remainingText, remaining < 0 && styles.remainingTextReached]}>
+                {remaining > 0
+                  ? `${remaining} kcal kaldı`
+                  : remaining < 0
+                    ? `${Math.abs(remaining)} kcal fazla`
+                    : 'Hedefe ulaşıldı! 🎉'}
+              </Text>
+            </View>
+
+            {/* Öğün Ekle - aynı widget içinde */}
+            <TouchableOpacity
+              style={styles.addMealButtonInCard}
+              onPress={() => navigation.navigate('AddMeal')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.addMealIcon}>📸</Text>
+              <Text style={styles.addMealText}>Öğün Ekle</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Diyet Takip Kartı */}
+        {activeDiet && (
+          <View style={styles.cardWrapper}>
+            <View style={styles.dietTrackerCard}>
+              <View style={styles.dietTrackerHeader}>
+                <View style={styles.dietTrackerInfo}>
+                  <Text style={styles.dietTrackerLabel}>Aktif Diyet</Text>
+                  <Text style={styles.dietTrackerName}>{activeDiet.name} {activeDiet.icon}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.dietDetailsBtn}
+                  onPress={() => navigation.navigate('DietDetail', { diet: activeDiet })}
+                >
+                  <Text style={styles.dietDetailsText}>Detaylar</Text>
+                  <Ionicons name="chevron-forward" size={14} color="#4FC3F7" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.complianceSection}>
+                <View style={styles.complianceBadgeContainer}>
+                  {Math.abs(remaining) <= 150 ? (
+                    <View style={styles.complianceBadgeSuccess}>
+                      <Text style={styles.complianceBadgeText}>✅ Diyete Sadık</Text>
                     </View>
-                  ))}
-                  {meal.items && meal.items.length > 3 && (
-                    <View style={styles.mealItemRow}>
-                      <Text style={styles.mealItemMore}>... ve {meal.items.length - 3} madde daha</Text>
+                  ) : remaining > 150 ? (
+                    <View style={styles.complianceBadgeInfo}>
+                      <Text style={styles.complianceBadgeText}>ℹ️ Biraz az yedin</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.complianceBadgeWarning}>
+                      <Text style={styles.complianceBadgeText}>⚠️ Sınırı aştın</Text>
                     </View>
                   )}
                 </View>
-                <View style={styles.mealTotalCalories}>
-                  <Text style={styles.mealTotalLabel}>Toplam</Text>
-                  <Text style={styles.mealCalories}>{meal.totalCalories} kcal</Text>
+
+                <View style={styles.weeklyProgressContainer}>
+                  <Text style={styles.weeklyProgressLabel}>Haftalık İstikrar (7 Gün)</Text>
+                  <View style={styles.weeklyStreakRow}>
+                    {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                      <View key={i} style={[styles.streakDay, i < 5 ? styles.streakDayCompleted : styles.streakDayPending]}>
+                        <Ionicons
+                          name={i < 5 ? "checkmark-circle" : "ellipse-outline"}
+                          size={18}
+                          color={i < 5 ? "#4CAF50" : "#2a3447"}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.weeklySubtitle}>4/7 gün başarıyla tamamlandı!</Text>
                 </View>
-              </TouchableOpacity>
-            ))
-          )}
+              </View>
+            </View>
+          </View>
+        )}
+
+        <View key="water" style={styles.cardWrapper}>
+          <View style={styles.waterCard}>
+            <View style={styles.waterHeader}>
+              <View style={styles.waterHeaderTop}>
+                <Text style={styles.waterLabel}>💧 Günlük Su Tüketimi</Text>
+                {waterIntake > 0 && (
+                  <TouchableOpacity
+                    onPress={handleUndoWater}
+                    disabled={addingWater}
+                    style={styles.waterUndoButton}
+                  >
+                    <Ionicons name="arrow-undo-outline" size={18} color="#4FC3F7" />
+                    <Text style={styles.waterUndoText}>Geri Al</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <View style={styles.waterGoalRow}>
+                <Text style={styles.waterGoalText}>
+                  Hedef: {waterGoal}ml ({(waterGoal / 1000).toFixed(1)}L)
+                </Text>
+                <View style={styles.seasonBadge}>
+                  <Text style={styles.seasonText}>{getCurrentSeasonInfo().name}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Progress Bar */}
+            <View style={styles.waterProgressRow}>
+              <View style={styles.waterProgressContainer}>
+                <View style={styles.waterProgressBg}>
+                  <View
+                    style={[
+                      styles.waterProgressFill,
+                      { width: `${Math.min((waterIntake / waterGoal) * 100, 100)}%` }
+                    ]}
+                  />
+                </View>
+                <View style={styles.waterStatsRow}>
+                  <Text style={styles.waterCurrentText}>{waterIntake}ml</Text>
+                  <Text style={styles.waterPercentText}>
+                    {Math.round((waterIntake / waterGoal) * 100)}%
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Hızlı Ekle Butonları */}
+            <View style={styles.quickAddContainer}>
+              {QUICK_ADD_AMOUNTS.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[
+                    styles.quickAddButton,
+                    isWaterLimitReached && styles.quickAddButtonDisabled
+                  ]}
+                  onPress={() => handleQuickAddWater(item.amount)}
+                  disabled={addingWater || isWaterLimitReached}
+                >
+                  <Text style={[styles.quickAddIcon, isWaterLimitReached && { opacity: 0.5 }]}>{item.icon}</Text>
+                  <Text style={styles.quickAddLabel}>{item.label}</Text>
+                  <Text style={[styles.quickAddAmount, isWaterLimitReached && { color: '#888' }]}>{item.amount}ml</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {isWaterLimitReached && (
+              <View style={styles.limitReachedContainer}>
+                <Text style={styles.limitReachedText}>⚠️ Günlük maksimum su sınırına ulaştın. Fazlası sağlığın için riskli olabilir.</Text>
+              </View>
+            )}
+          </View>
         </View>
+        <View key="meals" style={styles.cardWrapper}>
+          <View style={styles.mealsSection}>
+            <Text style={styles.sectionTitle}>Bugünün Öğünleri</Text>
+
+            {todayMeals.length === 0 ? (
+              <View style={styles.emptyMeals}>
+                <Text style={styles.emptyMealsIcon}>🍽️</Text>
+                <Text style={styles.emptyMealsText}>Henüz öğün eklenmedi</Text>
+                <Text style={styles.emptyMealsSubtext}>
+                  Günlük takibine başlamak için öğün ekle
+                </Text>
+              </View>
+            ) : (
+              sortedTodayMeals.map((meal) => (
+                <TouchableOpacity
+                  key={meal.id}
+                  style={styles.mealCard}
+                  onPress={() => navigation.navigate('MealDetail', { meal })}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.mealInfo}>
+                    <View style={styles.mealHeader}>
+                      <Text style={styles.mealType}>{getMealTypeLabel(meal.mealType)}</Text>
+                      <Text style={styles.mealTime}>{formatMealTime(meal.date)}</Text>
+                    </View>
+
+                    {/* Yiyecek listesi — en fazla 3 madde, fazlası "..." */}
+                    {meal.items && meal.items.slice(0, 3).map((item, index) => (
+                      <View key={index} style={styles.mealItemRow}>
+                        <Text style={styles.mealItemName} numberOfLines={2}>
+                          • {item.name}
+                          {item.portion && <Text style={styles.mealPortion}> ({item.portion})</Text>}
+                        </Text>
+                        <Text style={styles.mealItemCalories} numberOfLines={1}>{item.calories} kcal</Text>
+                      </View>
+                    ))}
+                    {meal.items && meal.items.length > 3 && (
+                      <View style={styles.mealItemRow}>
+                        <Text style={styles.mealItemMore}>... ve {meal.items.length - 3} madde daha</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.mealTotalCalories}>
+                    <Text style={styles.mealTotalLabel}>Toplam</Text>
+                    <Text style={styles.mealCalories}>{meal.totalCalories} kcal</Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
         </View>
         <View key="exercise" style={styles.cardWrapper}>
-        <View style={styles.exerciseWidgetCard}>
-          <Text style={styles.exerciseWidgetLabel}>🔥 Yakılan Kalori</Text>
-          <Text style={styles.exerciseWidgetValue}>-{burnedCalories} kcal</Text>
-          <TouchableOpacity style={styles.exerciseWidgetLink} onPress={() => navigation.navigate('Egzersiz')}>
-            <Text style={styles.exerciseWidgetLinkText}>Egzersiz ekle →</Text>
-          </TouchableOpacity>
-        </View>
-        </View>
-        <View key="stats" style={styles.cardWrapper}>
-        <View style={styles.statsSection}>
-          <View style={styles.statsSectionHeader}>
-            <View style={styles.statsSectionTitleWrap}>
-              <Text style={styles.sectionTitle} numberOfLines={1}>Hızlı Bakış</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Stats')}
-              style={styles.viewAllButton}
-            >
-              <Text style={styles.viewAllText} numberOfLines={1}>Detaylı İstatistikler</Text>
-              <Text style={styles.viewAllIcon}>→</Text>
+          <View style={styles.exerciseWidgetCard}>
+            <Text style={styles.exerciseWidgetLabel}>🔥 Yakılan Kalori</Text>
+            <Text style={styles.exerciseWidgetValue}>-{burnedCalories} kcal</Text>
+            <TouchableOpacity style={styles.exerciseWidgetLink} onPress={() => navigation.navigate('Egzersiz')}>
+              <Text style={styles.exerciseWidgetLinkText}>Egzersiz ekle →</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statIcon}>🎯</Text>
-              <Text style={styles.statLabel}>Hedef</Text>
-              <Text style={styles.statValue} numberOfLines={1}>
-                {userData?.goal === 'lose' ? 'Kilo Ver' : 
-                 userData?.goal === 'gain' ? 'Kilo Al' : 'Koru'}
-              </Text>
+        </View>
+        <View key="stats" style={styles.cardWrapper}>
+          <View style={styles.statsSection}>
+            <View style={styles.statsSectionHeader}>
+              <View style={styles.statsSectionTitleWrap}>
+                <Text style={styles.sectionTitle} numberOfLines={1}>Hızlı Bakış</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Stats')}
+                style={styles.viewAllButton}
+              >
+                <Text style={styles.viewAllText} numberOfLines={1}>Detaylı İstatistikler</Text>
+                <Text style={styles.viewAllIcon}>→</Text>
+              </TouchableOpacity>
             </View>
+            <View style={styles.statsGrid}>
+              <View style={styles.statCard}>
+                <Text style={styles.statIcon}>🎯</Text>
+                <Text style={styles.statLabel}>Hedef</Text>
+                <Text style={styles.statValue} numberOfLines={1}>
+                  {userData?.goal === 'lose' ? 'Kilo Ver' :
+                    userData?.goal === 'gain' ? 'Kilo Al' : 'Koru'}
+                </Text>
+              </View>
 
-            <View style={styles.statCard}>
-              <Text style={styles.statIcon}>⚖️</Text>
-              <Text style={styles.statLabel}>Kilo</Text>
-              <Text style={styles.statValue} numberOfLines={1}>{userData?.weight} kg</Text>
-            </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statIcon}>⚖️</Text>
+                <Text style={styles.statLabel}>Kilo</Text>
+                <Text style={styles.statValue} numberOfLines={1}>{userData?.weight} kg</Text>
+              </View>
 
-            <View style={styles.statCard}>
-              <Text style={styles.statIcon}>🍽️</Text>
-              <Text style={styles.statLabel}>Öğün Sayısı</Text>
-              <Text style={styles.statValue} numberOfLines={1}>{userData?.mealsPerDay}</Text>
+              <View style={styles.statCard}>
+                <Text style={styles.statIcon}>🍽️</Text>
+                <Text style={styles.statLabel}>Öğün Sayısı</Text>
+                <Text style={styles.statValue} numberOfLines={1}>{userData?.mealsPerDay}</Text>
+              </View>
             </View>
           </View>
-        </View>
         </View>
       </ScrollView>
       <StatusBar style="light" />
@@ -680,7 +839,7 @@ const styles = StyleSheet.create({
   addMealButtonInCard: {
     backgroundColor: '#4CAF50',
     borderRadius: 14,
-    padding: 14,
+    paddingVertical: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -701,6 +860,122 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
+  dietTrackerCard: {
+    backgroundColor: '#16213e',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  dietTrackerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a3447',
+    paddingBottom: 12,
+  },
+  dietTrackerInfo: {
+    flex: 1,
+  },
+  dietTrackerLabel: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  dietTrackerName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  dietDetailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#252542',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  dietDetailsText: {
+    fontSize: 12,
+    color: '#4FC3F7',
+    marginRight: 4,
+    fontWeight: '600',
+  },
+  complianceSection: {
+    marginTop: 4,
+  },
+  complianceBadgeContainer: {
+    marginBottom: 16,
+    alignItems: 'flex-start',
+  },
+  complianceBadgeSuccess: {
+    backgroundColor: 'rgba(76, 175, 80, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
+  },
+  complianceBadgeInfo: {
+    backgroundColor: 'rgba(79, 195, 247, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 195, 247, 0.3)',
+  },
+  complianceBadgeWarning: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  complianceBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  weeklyProgressContainer: {
+    backgroundColor: '#1a1a2e',
+    padding: 14,
+    borderRadius: 12,
+  },
+  weeklyProgressLabel: {
+    fontSize: 13,
+    color: '#9ca3af',
+    marginBottom: 10,
+    fontWeight: '600',
+  },
+  weeklyStreakRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  streakDay: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  streakDayCompleted: {
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+  },
+  streakDayPending: {
+    backgroundColor: '#252542',
+  },
+  weeklySubtitle: {
+    fontSize: 12,
+    color: '#9ca3af',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   waterCard: {
     backgroundColor: '#16213e',
     borderRadius: 20,
@@ -712,11 +987,52 @@ const styles = StyleSheet.create({
   waterHeader: {
     marginBottom: 16,
   },
+  waterHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  waterUndoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(79, 195, 247, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 195, 247, 0.3)',
+  },
+  waterUndoText: {
+    color: '#4FC3F7',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
   waterLabel: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#4FC3F7',
     marginBottom: 4,
+  },
+  waterGoalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  seasonBadge: {
+    backgroundColor: '#2a3447',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#4FC3F7',
+  },
+  seasonText: {
+    color: '#4FC3F7',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   waterGoalText: {
     fontSize: 12,
@@ -768,6 +1084,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#4FC3F7',
+  },
+  quickAddButtonDisabled: {
+    backgroundColor: '#1a1a2e',
+    borderColor: '#2a3447',
+    opacity: 0.7,
+  },
+  limitReachedContainer: {
+    marginTop: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  limitReachedText: {
+    color: '#ef4444',
+    fontSize: 11,
+    textAlign: 'center',
+    fontWeight: '500',
   },
   quickAddIcon: {
     fontSize: 24,

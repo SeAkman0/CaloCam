@@ -9,16 +9,16 @@ import {
   ActivityIndicator,
   Image,
   Modal,
-  Alert,
   Animated,
   Easing,
 } from 'react-native';
+import { useAlert } from '../context/AlertContext';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
 import { addMeal, getTodayMeals } from '../services/mealService';
 import { cancelMealNotification } from '../services/notificationService';
-import { analyzeFoodImage } from '../services/foodAIService';
+import { analyzeFoodImage, analyzeRecipeWithAI } from '../services/foodAIService';
 import { searchFoodInUSDA, translateFoodName } from '../services/usdaFoodService';
 import { getProductByBarcode } from '../services/openFoodFactsService';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -34,11 +34,12 @@ const MEAL_TYPES = [
 ];
 
 export default function AddMealScreen({ navigation }) {
+  const { showAlert } = useAlert();
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [mealType, setMealType] = useState('breakfast');
   const [foodItems, setFoodItems] = useState([
-    { id: '1', name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false, photoId: null }
+    { id: '1', name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false, photoId: null, ingredients: null, showIngredients: false }
   ]);
   const [photos, setPhotos] = useState([]);
   const [showImageOptions, setShowImageOptions] = useState(false);
@@ -53,10 +54,22 @@ export default function AddMealScreen({ navigation }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [highlightInvalidId, setHighlightInvalidId] = useState(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  const FOOD_LOAD_EMOJIS = ['🍽️', '🍳', '🥗', '🍲', '🥘', '🍴'];
+  const FOOD_LOAD_EMOJIS = ['🍽️', '🍳', '🥗', '🍲', '🥘', '🍴', '🧑‍🍳', '🔥', '🥄', '🫕'];
+  const ANALYZING_MESSAGES = [
+    'Sofra hazırlanıyor...', 'Malzemeler inceleniyor...', 'Besin değerleri hesaplanıyor...',
+    'Tarifler araştırılıyor...', 'Porsiyonlar ayarlanıyor...', 'Kalori tablosu oluşturuluyor...',
+    'AI şef çalışıyor...', 'Neredeyse hazır...', 'Makrolar hesaplanıyor...',
+  ];
+  const QUERY_EMOJIS = ['🧑‍🍳', '🔍', '📊', '🍽️', '⚡', '🧮'];
+  const QUERY_MESSAGES = [
+    'Analiz ediliyor...', 'Malzemeler ayrıştırılıyor...', 'Besin değerleri bulunuyor...',
+    'Tarifler kontrol ediliyor...', 'Hesaplamalar yapılıyor...', 'Neredeyse hazır...',
+  ];
   const foodLoadEmojiOpacity = useRef(new Animated.Value(1)).current;
   const foodLoadEmojiScale = useRef(new Animated.Value(1)).current;
   const [foodLoadEmojiIndex, setFoodLoadEmojiIndex] = useState(0);
+  const [analyzingMsgIndex, setAnalyzingMsgIndex] = useState(0);
+  const [queryAnimIndex, setQueryAnimIndex] = useState(0);
   const analyzingRef = useRef(analyzing);
   analyzingRef.current = analyzing;
 
@@ -90,16 +103,10 @@ export default function AddMealScreen({ navigation }) {
       if (!analyzingRef.current) return;
       Animated.parallel([
         Animated.timing(foodLoadEmojiOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-          easing: Easing.out(Easing.ease),
+          toValue: 0, duration: 250, useNativeDriver: true, easing: Easing.out(Easing.ease),
         }),
         Animated.timing(foodLoadEmojiScale, {
-          toValue: 0.6,
-          duration: 400,
-          useNativeDriver: true,
-          easing: Easing.in(Easing.ease),
+          toValue: 0.6, duration: 250, useNativeDriver: true, easing: Easing.in(Easing.ease),
         }),
       ]).start(() => {
         if (!analyzingRef.current) return;
@@ -108,24 +115,32 @@ export default function AddMealScreen({ navigation }) {
         setTimeout(() => {
           Animated.parallel([
             Animated.timing(foodLoadEmojiOpacity, {
-              toValue: 1,
-              duration: 400,
-              useNativeDriver: true,
-              easing: Easing.out(Easing.ease),
+              toValue: 1, duration: 250, useNativeDriver: true, easing: Easing.out(Easing.ease),
             }),
             Animated.timing(foodLoadEmojiScale, {
-              toValue: 1,
-              duration: 400,
-              useNativeDriver: true,
-              easing: Easing.out(Easing.back(1.2)),
+              toValue: 1, duration: 250, useNativeDriver: true, easing: Easing.out(Easing.back(1.2)),
             }),
           ]).start();
-        }, 50);
+        }, 30);
       });
     };
-    const interval = setInterval(cycleEmoji, 3500);
-    return () => clearInterval(interval);
+    const emojiInterval = setInterval(cycleEmoji, 1800);
+    const msgInterval = setInterval(() => {
+      if (!analyzingRef.current) return;
+      setAnalyzingMsgIndex((prev) => (prev + 1) % ANALYZING_MESSAGES.length);
+    }, 2500);
+    return () => { clearInterval(emojiInterval); clearInterval(msgInterval); };
   }, [analyzing]);
+
+  // Query animasyonu (manuel AI analiz)
+  useEffect(() => {
+    const hasQuerying = foodItems.some(f => f.querying);
+    if (!hasQuerying) return;
+    const interval = setInterval(() => {
+      setQueryAnimIndex(prev => (prev + 1) % QUERY_MESSAGES.length);
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [foodItems]);
 
   const getFirstInvalidItemId = () => {
     const inv = foodItems.find(item => {
@@ -154,7 +169,7 @@ export default function AddMealScreen({ navigation }) {
     setPhotos(prev => prev.filter(p => p.id !== photoId));
     setFoodItems(prev => {
       const next = prev.filter(item => item.photoId !== photoId);
-      return next.length ? next : [{ id: '1', name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false, photoId: null }];
+      return next.length ? next : [{ id: '1', name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false, photoId: null, ingredients: null, showIngredients: false }];
     });
   };
 
@@ -165,12 +180,12 @@ export default function AddMealScreen({ navigation }) {
       return;
     }
     const newId = String(Date.now());
-    setFoodItems([...foodItems, { id: newId, name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false, photoId: null }]);
+    setFoodItems([...foodItems, { id: newId, name: '', portion: '', calories: '', protein: '', carbs: '', fat: '', querying: false, photoId: null, ingredients: null, showIngredients: false }]);
   };
 
   const removeFoodItem = (id) => {
     if (foodItems.length === 1) {
-      Alert.alert('Girdinizi Kontrol Edin', 'En az bir yiyecek kalmalıdır. Öğünü kaydetmek istemiyorsanız geri dönün.');
+      showAlert('Girdinizi Kontrol Edin', 'En az bir yiyecek kalmalıdır. Öğünü kaydetmek istemiyorsanız geri dönün.');
       return;
     }
     setFoodItems(foodItems.filter(item => item.id !== id));
@@ -191,73 +206,169 @@ export default function AddMealScreen({ navigation }) {
     const nameStr = (item.name || '').trim();
     const portionStr = (item.portion || '').trim();
     if (!nameStr) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Bu yiyecek için ad girin, ardından "Besin Değerlerini Sorgula"ya basın. Boş bırakamazsınız.');
-      return;
-    }
-
-    if (!portionStr) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Gramaj (porsiyon) girin. Örn: 100. Boş bırakamazsınız.');
+      showAlert('Girdinizi Kontrol Edin', 'Bu yiyecek için ad girin, ardından "Besin Değerlerini Sorgula"ya basın. Boş bırakamazsınız.');
       return;
     }
 
     const gramsMatch = portionStr.match(/(\d+)/);
-    if (!gramsMatch) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Gramaj sadece rakam olmalıdır. Örn: 100');
-      return;
-    }
-    const grams = parseInt(gramsMatch[1]);
+    const grams = gramsMatch ? parseInt(gramsMatch[1]) : null;
 
     // Loading state'i aktif et
-    setFoodItems(foodItems.map(f =>
+    setFoodItems(prev => prev.map(f =>
       f.id === itemId ? { ...f, querying: true } : f
     ));
 
     try {
-      // Yiyecek adını İngilizce'ye çevir
-      const englishName = translateFoodName(item.name);
-      console.log(`🔍 Sorgulanıyor: "${item.name}" → "${englishName}"`);
+      // === AI TARİF ANALİZİ ===
+      // Gramaj girilmişse de girilmemişse de AI ile tarif analizi yap
+      console.log(`\n🧑‍🍳 ═══════════════════════════════════════`);
+      console.log(`🔍 "${nameStr}" için AI tarif analizi başlıyor...`);
+      console.log(`   ${grams ? `Porsiyon: ${grams}g` : 'Porsiyon belirtilmedi, standart porsiyon kullanılacak'}`);
+      console.log(`🧑‍🍳 ═══════════════════════════════════════\n`);
 
-      // USDA'dan sorgula
-      const result = await searchFoodInUSDA(englishName);
+      const recipeResult = await analyzeRecipeWithAI(nameStr, grams);
 
-      if (result.success) {
-        const food = result.food;
+      if (recipeResult.success && recipeResult.ingredients.length > 0) {
+        const ingredients = recipeResult.ingredients;
+        const totals = recipeResult.totals;
 
-        // Gramaja göre hesapla
-        const calories = Math.round((food.calories * grams) / 100);
-        const protein = Math.round((food.protein * grams) / 100);
-        const carbs = Math.round((food.carbs * grams) / 100);
-        const fat = Math.round((food.fat * grams) / 100);
+        // Eğer AI sadece 1 malzeme döndürdüyse (basit gıda), malzeme listesi ekleme
+        if (ingredients.length === 1) {
+          const ing = ingredients[0];
+          setFoodItems(prev => prev.map(f =>
+            f.id === itemId ? {
+              ...f,
+              portion: ing.grams.toString(),
+              calories: ing.calories.toString(),
+              protein: ing.protein.toString(),
+              carbs: ing.carbs.toString(),
+              fat: ing.fat.toString(),
+              querying: false,
+              ingredients: null,
+              showIngredients: false,
+            } : f
+          ));
 
-        // Input alanlarını doldur
-        setFoodItems(foodItems.map(f =>
-          f.id === itemId ? {
-            ...f,
-            calories: calories.toString(),
-            protein: protein.toString(),
-            carbs: carbs.toString(),
-            fat: fat.toString(),
-            querying: false
-          } : f
-        ));
+          console.log(`✅ "${nameStr}" basit gıda olarak eklendi:`);
+          console.log(`   📏 ${ing.grams}g | 🔥 ${ing.calories} kcal | 💪 ${ing.protein}g P | 🍞 ${ing.carbs}g K | 🧈 ${ing.fat}g Y`);
+        } else {
+          // Birden fazla malzeme: ana item'ın içine alt malzeme olarak ekle
+          setFoodItems(prev => prev.map(f =>
+            f.id === itemId ? {
+              ...f,
+              portion: totals.grams.toString(),
+              calories: totals.calories.toString(),
+              protein: totals.protein.toString(),
+              carbs: totals.carbs.toString(),
+              fat: totals.fat.toString(),
+              querying: false,
+              ingredients: ingredients,
+              showIngredients: true,
+            } : f
+          ));
 
-        console.log(`✅ "${item.name}" için besin değerleri bulundu ve dolduruldu:`);
-        console.log(`   Kalori: ${calories} kcal`);
-        console.log(`   Protein: ${protein}g`);
-        console.log(`   Karbonhidrat: ${carbs}g`);
-        console.log(`   Yağ: ${fat}g`);
+          console.log(`\n🎉 ═══════════════════════════════════════`);
+          console.log(`✅ "${nameStr}" ${ingredients.length} malzeme ile analiz edildi (alt madde olarak eklendi)`);
+          console.log(`🎉 ═══════════════════════════════════════`);
+          ingredients.forEach((ing, i) => {
+            console.log(`   ${i + 1}. ${ing.name}`);
+            console.log(`      📏 ${ing.grams}g | 🔥 ${ing.calories} kcal | 💪 ${ing.protein}g P | 🍞 ${ing.carbs}g K | 🧈 ${ing.fat}g Y`);
+          });
+          console.log(`   ─────────────────────────────────────`);
+          console.log(`   📊 TOPLAM: ${totals.grams}g | ${totals.calories} kcal | ${totals.protein}g P | ${totals.carbs}g K | ${totals.fat}g Y`);
+          console.log(`═══════════════════════════════════════\n`);
+        }
       } else {
-        setFoodItems(foodItems.map(f =>
-          f.id === itemId ? { ...f, querying: false } : f
-        ));
-        console.log(`❌ "${item.name}" için besin değerleri bulunamadı`);
+        // AI tarif analizi başarısız olduysa, USDA'dan dene (gramaj varsa)
+        if (grams) {
+          console.log(`⚠️ AI tarif analizi başarısız, USDA'dan sorgulanıyor...`);
+          const englishName = translateFoodName(nameStr);
+          console.log(`🔍 USDA Sorgulanıyor: "${nameStr}" → "${englishName}"`);
+
+          const result = await searchFoodInUSDA(englishName);
+
+          if (result.success) {
+            const food = result.food;
+            const calories = Math.round((food.calories * grams) / 100);
+            const protein = Math.round((food.protein * grams) / 100);
+            const carbs = Math.round((food.carbs * grams) / 100);
+            const fat = Math.round((food.fat * grams) / 100);
+
+            setFoodItems(prev => prev.map(f =>
+              f.id === itemId ? {
+                ...f,
+                calories: calories.toString(),
+                protein: protein.toString(),
+                carbs: carbs.toString(),
+                fat: fat.toString(),
+                querying: false
+              } : f
+            ));
+
+            console.log(`✅ USDA'dan "${nameStr}" için besin değerleri bulundu:`);
+            console.log(`   🔥 Kalori: ${calories} kcal`);
+            console.log(`   💪 Protein: ${protein}g`);
+            console.log(`   🍞 Karbonhidrat: ${carbs}g`);
+            console.log(`   🧈 Yağ: ${fat}g`);
+          } else {
+            setFoodItems(prev => prev.map(f =>
+              f.id === itemId ? { ...f, querying: false } : f
+            ));
+            console.log(`❌ "${nameStr}" için besin değerleri bulunamadı (hem AI hem USDA)`);
+            showAlert('Bulunamadı', `"${nameStr}" için besin değerleri bulunamadı. Lütfen değerleri manuel girin.`);
+          }
+        } else {
+          setFoodItems(prev => prev.map(f =>
+            f.id === itemId ? { ...f, querying: false } : f
+          ));
+          console.log(`❌ "${nameStr}" için AI tarif analizi başarısız oldu`);
+          showAlert('Bulunamadı', `"${nameStr}" için malzeme analizi yapılamadı. Gramaj girip tekrar deneyin veya değerleri manuel girin.`);
+        }
       }
     } catch (error) {
       console.error('❌ Sorgulama hatası:', error);
-      setFoodItems(foodItems.map(f =>
+      setFoodItems(prev => prev.map(f =>
         f.id === itemId ? { ...f, querying: false } : f
       ));
+      showAlert('Hata', 'Sorgulama sırasında bir hata oluştu. Lütfen tekrar deneyin.');
     }
+  };
+
+  const toggleIngredients = (itemId) => {
+    setFoodItems(prev => prev.map(f =>
+      f.id === itemId ? { ...f, showIngredients: !f.showIngredients } : f
+    ));
+  };
+
+  const removeIngredient = (itemId, ingredientId) => {
+    setFoodItems(prev => prev.map(f => {
+      if (f.id !== itemId || !f.ingredients) return f;
+
+      const newIngredients = f.ingredients.filter(ing => ing.id !== ingredientId);
+
+      // Toplamları yeniden hesapla
+      if (newIngredients.length === 0) {
+        return { ...f, ingredients: null, showIngredients: false };
+      }
+
+      const totals = newIngredients.reduce((acc, ing) => ({
+        grams: acc.grams + ing.grams,
+        calories: acc.calories + ing.calories,
+        protein: acc.protein + ing.protein,
+        carbs: acc.carbs + ing.carbs,
+        fat: acc.fat + ing.fat,
+      }), { grams: 0, calories: 0, protein: 0, carbs: 0, fat: 0 });
+
+      return {
+        ...f,
+        ingredients: newIngredients,
+        portion: totals.grams.toString(),
+        calories: totals.calories.toString(),
+        protein: totals.protein.toString(),
+        carbs: totals.carbs.toString(),
+        fat: totals.fat.toString(),
+      };
+    }));
   };
 
   const pickImageFromCamera = async () => {
@@ -356,34 +467,131 @@ export default function AddMealScreen({ navigation }) {
       const result = await analyzeFoodImage(imageUri);
 
       if (result.success && result.foods.length > 0) {
-        const newFoodItems = result.foods.map(food => ({
-          id: food.id || String(Date.now() + Math.random()),
-          name: food.name,
-          portion: food.portion,
-          calories: food.calories.toString(),
-          protein: food.protein ? food.protein.toString() : '',
-          carbs: food.carbs ? food.carbs.toString() : '',
-          fat: food.fat ? food.fat.toString() : '',
-          querying: false,
-          photoId,
-        }));
+        console.log('🎉 AI Fotoğraf Analizi Başarılı:', result.message);
+        console.log(`📋 ${result.foods.length} yemek tespit edildi, malzeme analizi başlıyor...\n`);
 
-        if (append) {
-          setFoodItems((prev) => [...prev, ...newFoodItems]);
-        } else {
-          setFoodItems(newFoodItems);
+        // Her tespit edilen yemek için malzeme analizi yap
+        const newFoodItems = [];
+
+        for (let foodIdx = 0; foodIdx < result.foods.length; foodIdx++) {
+          const food = result.foods[foodIdx];
+          const foodName = food.name;
+          const foodGrams = food.grams || parseInt(food.portion) || null;
+
+          // Ardışık çağrılar arası bekleme (rate limit önleme)
+          if (foodIdx > 0) {
+            console.log(`   ⏳ API rate limit önlemi: 1.5s bekleniyor...`);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+          }
+
+          console.log(`\n🧑‍🍳 ═══════════════════════════════════════`);
+          console.log(`📸 "${foodName}" (${foodGrams || '?'}g) için malzeme analizi... (${foodIdx + 1}/${result.foods.length})`);
+          console.log(`🧑‍🍳 ═══════════════════════════════════════`);
+
+          try {
+            const recipeResult = await analyzeRecipeWithAI(foodName, foodGrams);
+
+            if (recipeResult.success && recipeResult.ingredients.length > 0) {
+              const ingredients = recipeResult.ingredients;
+              const totals = recipeResult.totals;
+
+              if (ingredients.length === 1) {
+                // Basit gıda - malzeme listesi yok
+                const ing = ingredients[0];
+                newFoodItems.push({
+                  id: food.id || String(Date.now() + Math.random()),
+                  name: foodName,
+                  portion: ing.grams.toString(),
+                  calories: ing.calories.toString(),
+                  protein: ing.protein.toString(),
+                  carbs: ing.carbs.toString(),
+                  fat: ing.fat.toString(),
+                  querying: false,
+                  photoId,
+                  ingredients: null,
+                  showIngredients: false,
+                });
+
+                console.log(`✅ "${foodName}" basit gıda:`);
+                console.log(`   📏 ${ing.grams}g | 🔥 ${ing.calories} kcal | 💪 ${ing.protein}g P | 🍞 ${ing.carbs}g K | 🧈 ${ing.fat}g Y`);
+              } else {
+                // Karmaşık yemek - malzeme listesi ile
+                newFoodItems.push({
+                  id: food.id || String(Date.now() + Math.random()),
+                  name: foodName,
+                  portion: totals.grams.toString(),
+                  calories: totals.calories.toString(),
+                  protein: totals.protein.toString(),
+                  carbs: totals.carbs.toString(),
+                  fat: totals.fat.toString(),
+                  querying: false,
+                  photoId,
+                  ingredients: ingredients,
+                  showIngredients: true,
+                });
+
+                console.log(`✅ "${foodName}" ${ingredients.length} malzeme ile eklendi:`);
+                ingredients.forEach((ing, i) => {
+                  console.log(`   ${i + 1}. ${ing.name} - ${ing.grams}g - ${ing.calories} kcal`);
+                });
+                console.log(`   📊 TOPLAM: ${totals.grams}g | ${totals.calories} kcal`);
+              }
+            } else {
+              // AI tarif analizi başarısız - orijinal verileri kullan
+              console.log(`⚠️ "${foodName}" için malzeme analizi yapılamadı, orijinal veriler kullanılıyor`);
+              newFoodItems.push({
+                id: food.id || String(Date.now() + Math.random()),
+                name: foodName,
+                portion: food.portion || (foodGrams ? foodGrams.toString() : ''),
+                calories: food.calories.toString(),
+                protein: food.protein ? food.protein.toString() : '',
+                carbs: food.carbs ? food.carbs.toString() : '',
+                fat: food.fat ? food.fat.toString() : '',
+                querying: false,
+                photoId,
+                ingredients: null,
+                showIngredients: false,
+              });
+            }
+          } catch (recipeError) {
+            console.error(`❌ "${foodName}" malzeme analizi hatası:`, recipeError.message);
+            // Hata durumunda orijinal verileri kullan
+            newFoodItems.push({
+              id: food.id || String(Date.now() + Math.random()),
+              name: foodName,
+              portion: food.portion || '',
+              calories: food.calories.toString(),
+              protein: food.protein ? food.protein.toString() : '',
+              carbs: food.carbs ? food.carbs.toString() : '',
+              fat: food.fat ? food.fat.toString() : '',
+              querying: false,
+              photoId,
+              ingredients: null,
+              showIngredients: false,
+            });
+          }
         }
-        console.log('🎉 AI Analizi Başarılı:', result.message);
-        console.log(`📋 ${newFoodItems.length} yiyecek tespit edildi ve eklendi`);
 
-        // Her yiyeceği detaylı logla
-        newFoodItems.forEach((food, index) => {
-          console.log(`   ${index + 1}. ${food.name} - ${food.portion} - ${food.calories} kcal`);
-        });
+        if (newFoodItems.length > 0) {
+          if (append) {
+            setFoodItems((prev) => [...prev, ...newFoodItems]);
+          } else {
+            setFoodItems(newFoodItems);
+          }
 
-        // Toplam kaloriyi logla
-        const totalCal = newFoodItems.reduce((sum, f) => sum + parseInt(f.calories || 0), 0);
-        console.log(`💰 TOPLAM KALORİ: ${totalCal} kcal`);
+          // Toplam log
+          console.log(`\n🎉 ═══════════════════════════════════════`);
+          console.log(`📸 FOTOĞRAF ANALİZİ TAMAMLANDI`);
+          console.log(`🎉 ═══════════════════════════════════════`);
+          newFoodItems.forEach((food, index) => {
+            const ingCount = food.ingredients ? food.ingredients.length : 0;
+            console.log(`   ${index + 1}. ${food.name} - ${food.portion}g - ${food.calories} kcal${ingCount > 0 ? ` (${ingCount} malzeme)` : ''}`);
+          });
+          const totalCal = newFoodItems.reduce((sum, f) => sum + parseInt(f.calories || 0), 0);
+          console.log(`   ─────────────────────────────────────`);
+          console.log(`   💰 TOPLAM KALORİ: ${totalCal} kcal`);
+          console.log(`═══════════════════════════════════════\n`);
+        }
       } else {
         const errorMessage = result.error || 'Yiyecek tespit edilemedi. Manuel olarak ekleyebilirsin.';
         console.log('❌ Analiz Başarısız:', errorMessage);
@@ -400,7 +608,7 @@ export default function AddMealScreen({ navigation }) {
     if (!cameraPermission?.granted) {
       requestCameraPermission().then((result) => {
         if (result?.granted) setShowBarcodeScanner(true);
-        else Alert.alert('Kamera İzni', 'Barkod okutmak için kameraya izin vermeniz gerekir.');
+        else showAlert('Kamera İzni', 'Barkod okutmak için kameraya izin vermeniz gerekir.');
       });
     } else {
       setShowBarcodeScanner(true);
@@ -492,7 +700,7 @@ export default function AddMealScreen({ navigation }) {
       if (firstInvalidId) {
         runShakeAndHighlight(firstInvalidId);
       } else {
-        Alert.alert('Girdinizi Kontrol Edin', 'En az bir yiyecek ekleyin; her biri için yiyecek adı ve kalori (kcal) girin. Boş bırakamazsınız.');
+        showAlert('Girdinizi Kontrol Edin', 'En az bir yiyecek ekleyin; her biri için yiyecek adı ve kalori (kcal) girin. Boş bırakamazsınız.');
       }
       return;
     }
@@ -503,7 +711,7 @@ export default function AddMealScreen({ navigation }) {
     });
     if (hasEmptyCalories) {
       if (firstInvalidId) runShakeAndHighlight(firstInvalidId);
-      else Alert.alert('Girdinizi Kontrol Edin', 'Tüm yiyeceklerin kalori bilgisi girilmiş olmalı. Eksik veya boş bırakılamaz.');
+      else showAlert('Girdinizi Kontrol Edin', 'Tüm yiyeceklerin kalori bilgisi girilmiş olmalı. Eksik veya boş bırakılamaz.');
       return;
     }
 
@@ -541,19 +749,8 @@ export default function AddMealScreen({ navigation }) {
         console.log(`   Toplam: ${totalCalories} kcal`);
         console.log(`   Toplam: ${totalCalories} kcal`);
 
-        // Bildirimi iptal et (Sıradaki öğün için)
-        try {
-          const mealsResult = await getTodayMeals(currentUser.uid);
-          if (mealsResult.success) {
-            // Bugün yenen öğün sayısı (bu yeni eklenen dahil)
-            const mealCount = mealsResult.meals.length;
-            // index 0'dan başlar, yani 1. öğün index 0'dır.
-            // mealCount 1 ise, index 0'ı iptal et.
-            await cancelMealNotification(mealCount - 1);
-          }
-        } catch (notifError) {
-          console.log('Bildirim iptal edilemedi:', notifError);
-        }
+        // NOT: Buradaki cancelMealNotification çağrısı tekrarlayan bildirimleri tamamen iptal ettiği için kaldırıldı.
+        // Gelecekte sadece "bugünü" iptal eden bir mantık eklenebilir.
 
         navigation.goBack();
       } else {
@@ -637,8 +834,8 @@ export default function AddMealScreen({ navigation }) {
               <Animated.View style={[styles.foodLoadIconWrap, { opacity: foodLoadEmojiOpacity, transform: [{ scale: foodLoadEmojiScale }] }]}>
                 <Text style={styles.foodLoadEmoji}>{FOOD_LOAD_EMOJIS[foodLoadEmojiIndex]}</Text>
               </Animated.View>
-              <Text style={styles.analyzingText}>Sofra hazırlanıyor...</Text>
-              <Text style={styles.analyzingSubtext}>AI yemekleri tanıyor</Text>
+              <Text style={styles.analyzingText}>{ANALYZING_MESSAGES[analyzingMsgIndex]}</Text>
+              <Text style={styles.analyzingSubtext}>AI yemekleri tanıyor ve analiz ediyor</Text>
             </View>
           ) : (
             <TouchableOpacity
@@ -753,7 +950,7 @@ export default function AddMealScreen({ navigation }) {
                   <Text style={styles.label}>Yiyecek Adı *</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Örn: Domates"
+                    placeholder="Örn: Trileçe, Domates, vb."
                     placeholderTextColor="#666"
                     value={item.name}
                     onChangeText={(value) => updateFoodItem(item.id, 'name', value)}
@@ -762,7 +959,7 @@ export default function AddMealScreen({ navigation }) {
 
                 <View style={styles.inputRow}>
                   <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                    <Text style={styles.label}>Porsiyon / Gramaj (g) *</Text>
+                    <Text style={styles.label}>Gramaj (g) - opsiyonel</Text>
                     <TextInput
                       style={styles.input}
                       placeholder="100"
@@ -795,12 +992,15 @@ export default function AddMealScreen({ navigation }) {
                   disabled={item.querying}
                 >
                   {item.querying ? (
-                    <ActivityIndicator color="#fff" size="small" />
+                    <View style={styles.queryLoadingContainer}>
+                      <Text style={styles.queryLoadingEmoji}>{QUERY_EMOJIS[queryAnimIndex % QUERY_EMOJIS.length]}</Text>
+                      <Text style={styles.queryLoadingText}>{QUERY_MESSAGES[queryAnimIndex % QUERY_MESSAGES.length]}</Text>
+                    </View>
                   ) : (
                     <>
-                      <Text style={styles.queryButtonIcon}>🔍</Text>
+                      <Text style={styles.queryButtonIcon}>🧑‍🍳</Text>
                       <Text style={styles.queryButtonText}>
-                        Besin Değerlerini Sorgula
+                        AI ile Malzeme Analizi Yap
                       </Text>
                     </>
                   )}
@@ -847,6 +1047,57 @@ export default function AddMealScreen({ navigation }) {
                     />
                   </View>
                 </View>
+
+                {/* Malzeme Listesi (Alt Maddeler) */}
+                {item.ingredients && item.ingredients.length > 1 && (
+                  <View style={styles.ingredientsSection}>
+                    <TouchableOpacity
+                      style={styles.ingredientsToggle}
+                      onPress={() => toggleIngredients(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.ingredientsToggleLeft}>
+                        <Text style={styles.ingredientsToggleIcon}>
+                          {item.showIngredients ? '▼' : '▶'}
+                        </Text>
+                        <Text style={styles.ingredientsToggleText}>
+                          İçindekiler ({item.ingredients.length} malzeme)
+                        </Text>
+                      </View>
+                      <Text style={styles.ingredientsToggleHint}>
+                        {item.showIngredients ? 'Gizle' : 'Göster'}
+                      </Text>
+                    </TouchableOpacity>
+
+                    {item.showIngredients && (
+                      <View style={styles.ingredientsList}>
+                        {item.ingredients.map((ing, ingIdx) => (
+                          <View key={ing.id || ingIdx} style={styles.ingredientRow}>
+                            <TouchableOpacity
+                              style={styles.ingredientRemoveBtn}
+                              onPress={() => removeIngredient(item.id, ing.id)}
+                              activeOpacity={0.6}
+                            >
+                              <Text style={styles.ingredientRemoveText}>−</Text>
+                            </TouchableOpacity>
+                            <View style={styles.ingredientNameCol}>
+                              <Text style={styles.ingredientName}>{ing.name}</Text>
+                            </View>
+                            <View style={styles.ingredientValues}>
+                              <Text style={styles.ingredientGrams}>{ing.grams}g</Text>
+                              <Text style={styles.ingredientCalories}>{ing.calories} kcal</Text>
+                            </View>
+                            <View style={styles.ingredientMacros}>
+                              <Text style={styles.ingredientMacroP}>{ing.protein}P</Text>
+                              <Text style={styles.ingredientMacroC}>{ing.carbs}K</Text>
+                              <Text style={styles.ingredientMacroF}>{ing.fat}Y</Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
               </Animated.View>
             );
           })}
@@ -1644,6 +1895,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#4CAF50',
   },
+  queryLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  queryLoadingEmoji: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  queryLoadingText: {
+    color: '#4CAF50',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   queryButtonIcon: {
     fontSize: 16,
     marginRight: 8,
@@ -1703,5 +1968,121 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Ingredient Sub-items Styles
+  ingredientsSection: {
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#2a3447',
+    paddingTop: 10,
+  },
+  ingredientsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  ingredientsToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ingredientsToggleIcon: {
+    fontSize: 12,
+    color: '#4CAF50',
+    marginRight: 8,
+    width: 14,
+  },
+  ingredientsToggleText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  ingredientsToggleHint: {
+    fontSize: 12,
+    color: '#888',
+  },
+  ingredientsList: {
+    marginTop: 6,
+    backgroundColor: '#0f1724',
+    borderRadius: 10,
+    padding: 10,
+  },
+  ingredientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(42, 52, 71, 0.5)',
+  },
+  ingredientNameCol: {
+    flex: 1.2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ingredientBullet: {
+    fontSize: 10,
+    color: '#4CAF50',
+    marginRight: 6,
+  },
+  ingredientName: {
+    fontSize: 13,
+    color: '#e0e0e0',
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  ingredientValues: {
+    flex: 0.8,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  ingredientGrams: {
+    fontSize: 12,
+    color: '#b4b4b4',
+    fontWeight: '500',
+  },
+  ingredientCalories: {
+    fontSize: 12,
+    color: '#f59e0b',
+    fontWeight: '600',
+    minWidth: 48,
+    textAlign: 'right',
+  },
+  ingredientMacros: {
+    flex: 0.7,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 6,
+  },
+  ingredientMacroP: {
+    fontSize: 11,
+    color: '#60a5fa',
+    fontWeight: '500',
+  },
+  ingredientMacroC: {
+    fontSize: 11,
+    color: '#f97316',
+    fontWeight: '500',
+  },
+  ingredientMacroF: {
+    fontSize: 11,
+    color: '#a78bfa',
+    fontWeight: '500',
+  },
+  ingredientRemoveBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255, 68, 68, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  ingredientRemoveText: {
+    color: '#ff6b6b',
+    fontSize: 16,
+    fontWeight: 'bold',
+    lineHeight: 18,
   },
 });

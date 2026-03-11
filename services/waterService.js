@@ -1,5 +1,71 @@
-import { collection, addDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, Timestamp, deleteDoc, doc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
+
+/**
+ * Belirli bir su tüketimini sil
+ * @param {string} waterId - Su kaydı ID
+ * @returns {Promise<Object>}
+ */
+export const deleteWaterIntake = async (waterId) => {
+  try {
+    const waterDocRef = doc(db, 'waterIntake', waterId);
+    await deleteDoc(waterDocRef);
+    console.log(`💧 Su kaydı silindi: ${waterId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Su silme hatası:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Son su tüketimini geri al (Bugün için)
+ * @param {string} userId - Kullanıcı ID
+ * @returns {Promise<Object>}
+ */
+export const undoLastWaterIntake = async (userId) => {
+  try {
+    const todayResult = await getTodayWaterIntake(userId);
+
+    if (!todayResult.success || todayResult.records.length === 0) {
+      return { success: false, error: 'Bugün için su kaydı bulunamadı' };
+    }
+
+    // Tarihe göre sırala (en yeni en üstte)
+    const records = [...todayResult.records].sort((a, b) => b.date - a.date);
+    const lastRecord = records[0];
+
+    const result = await deleteWaterIntake(lastRecord.id);
+    if (result.success) {
+      return { success: true, removedAmount: lastRecord.amount };
+    }
+    return result;
+  } catch (error) {
+    console.error('❌ Son suyu geri alma hatası:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+
+/**
+ * Mevcut mevsim bilgisini ve su çarpanını getir
+ * @returns {Object} - { season: string, multiplier: number }
+ */
+export const getCurrentSeasonInfo = () => {
+  const month = new Date().getMonth(); // 0-11
+
+  // Mevsimler (Kuzey Yarımküre için)
+  // 5-8: Haziran, Temmuz, Ağustos (Yaz) -> Su ihtiyacı artar
+  if (month >= 5 && month <= 7) {
+    return { name: 'Yaz ☀️', multiplier: 1.20, note: 'Sıcak hava nedeniyle su ihtiyacın %20 arttı.' };
+  }
+  // 11, 0, 1: Aralık, Ocak, Şubat (Kış) -> Su ihtiyacı biraz azalabilir
+  if (month === 11 || month === 0 || month === 1) {
+    return { name: 'Kış ❄️', multiplier: 0.95, note: 'Soğuk hava nedeniyle su ihtiyacın %5 azaldı.' };
+  }
+  // Diğer aylar (Bahar) -> Normal seviye
+  return { name: 'Bahar 🌸', multiplier: 1.0, note: 'Normal su ihtiyacı seviyesindesin.' };
+};
 
 /**
  * Günlük su hedefini hesapla (ml cinsinden)
@@ -12,31 +78,36 @@ import { db } from '../config/firebase';
 export const calculateDailyWaterGoal = (weight, height, age, gender) => {
   // Temel hesaplama (kilo bazlı): 30-35 ml/kg
   let baseWater = weight * 35; // ml
-  
+
   // Cinsiyet düzeltmesi
   if (gender === 'male') {
     baseWater *= 1.05; // Erkekler %5 daha fazla
   } else if (gender === 'female') {
     baseWater *= 0.95; // Kadınlar %5 daha az
   }
-  
+
   // Yaş düzeltmesi
   if (age < 18) {
     baseWater *= 0.9; // Gençler biraz daha az
   } else if (age > 65) {
     baseWater *= 0.95; // Yaşlılar biraz daha az
   }
-  
+
+  // Mevsimsel düzeltme
+  const seasonInfo = getCurrentSeasonInfo();
+  baseWater *= seasonInfo.multiplier;
+
   // Minimum ve maksimum sınırlar
   const minWater = 1500; // 1.5 litre minimum
-  const maxWater = 4000; // 4 litre maksimum
-  
-  const finalWater = Math.max(minWater, Math.min(maxWater, Math.round(baseWater)));
-  
-  console.log(`💧 Su hedefi hesaplandı: ${finalWater}ml (${weight}kg, ${age} yaş, ${gender})`);
-  
+  const maxWater = 4500; // 4.5 litre maksimum (yaz etkisiyle arttırıldı)
+
+  const finalWater = Math.max(minWater, Math.min(maxWater, Math.round(baseWater / 50) * 50)); // 50ml'ye yuvarla
+
+  console.log(`💧 Su hedefi ${seasonInfo.name} mevsimine göre hesaplandı: ${finalWater}ml`);
+
   return finalWater;
 };
+
 
 /**
  * Su tüketimi ekle
@@ -47,7 +118,7 @@ export const calculateDailyWaterGoal = (weight, height, age, gender) => {
 export const addWaterIntake = async (userId, amount) => {
   try {
     const waterRef = collection(db, 'waterIntake');
-    
+
     const waterDoc = await addDoc(waterRef, {
       userId: userId,
       amount: amount, // ml
@@ -71,7 +142,7 @@ export const addWaterIntake = async (userId, amount) => {
 export const getTodayWaterIntake = async (userId) => {
   try {
     const waterRef = collection(db, 'waterIntake');
-    
+
     // Sadece userId ile sorgula
     const q = query(
       waterRef,
@@ -80,7 +151,7 @@ export const getTodayWaterIntake = async (userId) => {
 
     const querySnapshot = await getDocs(q);
     const allWater = [];
-    
+
     querySnapshot.forEach((doc) => {
       allWater.push({
         id: doc.id,
@@ -104,7 +175,7 @@ export const getTodayWaterIntake = async (userId) => {
     const totalWater = todayWater.reduce((sum, water) => sum + (water.amount || 0), 0);
 
     console.log(`💧 Bugün içilen su: ${totalWater}ml`);
-    
+
     return { success: true, totalWater, records: todayWater };
   } catch (error) {
     console.error('❌ Su verisi getirme hatası:', error);
@@ -122,7 +193,7 @@ export const getWeeklyWaterStats = async (userId) => {
     const waterRef = collection(db, 'waterIntake');
     const q = query(waterRef, where('userId', '==', userId));
     const querySnapshot = await getDocs(q);
-    
+
     const allWater = [];
     querySnapshot.forEach((doc) => {
       allWater.push({
@@ -135,22 +206,22 @@ export const getWeeklyWaterStats = async (userId) => {
     // Son 7 gün için veri hazırla
     const last7Days = [];
     const today = new Date();
-    
+
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       date.setHours(0, 0, 0, 0);
-      
+
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
-      
+
       const dayWater = allWater.filter(water => {
         const waterDate = new Date(water.date);
         return waterDate >= date && waterDate < nextDay;
       });
-      
+
       const totalWater = dayWater.reduce((sum, w) => sum + (w.amount || 0), 0);
-      
+
       last7Days.push({
         date: date.toISOString().split('T')[0],
         day: ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'][date.getDay()],
@@ -176,7 +247,7 @@ export const getMonthlyWaterStats = async (userId) => {
     const waterRef = collection(db, 'waterIntake');
     const q = query(waterRef, where('userId', '==', userId));
     const querySnapshot = await getDocs(q);
-    
+
     const allWater = [];
     querySnapshot.forEach((doc) => {
       allWater.push({
@@ -189,22 +260,22 @@ export const getMonthlyWaterStats = async (userId) => {
     // Son 30 gün için veri hazırla
     const last30Days = [];
     const today = new Date();
-    
+
     for (let i = 29; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       date.setHours(0, 0, 0, 0);
-      
+
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
-      
+
       const dayWater = allWater.filter(water => {
         const waterDate = new Date(water.date);
         return waterDate >= date && waterDate < nextDay;
       });
-      
+
       const totalWater = dayWater.reduce((sum, w) => sum + (w.amount || 0), 0);
-      
+
       last30Days.push({
         date: date.toISOString().split('T')[0],
         day: `${date.getDate()}/${date.getMonth() + 1}`,
@@ -233,7 +304,7 @@ export const getMonthlyWaterStats = async (userId) => {
 export const getWaterGoalProgress = async (userId, dailyGoal) => {
   try {
     const weeklyResult = await getWeeklyWaterStats(userId);
-    
+
     if (!weeklyResult.success) {
       return { success: false, percentage: 0, daysAchieved: 0 };
     }
@@ -243,12 +314,12 @@ export const getWaterGoalProgress = async (userId, dailyGoal) => {
     const percentage = Math.round((daysAchieved / 7) * 100);
 
     console.log(`💧 Su hedefi başarısı: ${percentage}% (${daysAchieved}/7 gün)`);
-    
-    return { 
-      success: true, 
+
+    return {
+      success: true,
       percentage,
       daysAchieved,
-      totalDays: 7 
+      totalDays: 7
     };
   } catch (error) {
     console.error('❌ Su hedefi başarısı hatası:', error);

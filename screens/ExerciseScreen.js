@@ -9,9 +9,10 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
+import { useAlert } from '../context/AlertContext';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../config/firebase';
 import { EXERCISE_TYPES, getExerciseTypeById, calculateBurnedCalories } from '../data/exerciseTypes';
 import {
@@ -22,6 +23,7 @@ import {
 import { allowOnlyNumbers } from '../utils/validation';
 
 export default function ExerciseScreen({ navigation }) {
+  const { showAlert } = useAlert();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,7 +53,7 @@ export default function ExerciseScreen({ navigation }) {
     const valueTrim = (value || '').trim();
     const num = parseInt(valueTrim, 10);
     if (!valueTrim || isNaN(num) || num <= 0) {
-      Alert.alert('Girdinizi Kontrol Edin', `${selectedType?.unitLabel || 'Miktar'} alanına geçerli bir sayı girin (1 ve üzeri). Boş bırakamazsınız.`);
+      showAlert('Girdinizi Kontrol Edin', `${selectedType?.unitLabel || 'Miktar'} alanına geçerli bir sayı girin (1 ve üzeri). Boş bırakamazsınız.`);
       return;
     }
     const user = auth.currentUser;
@@ -109,6 +111,14 @@ export default function ExerciseScreen({ navigation }) {
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* Egzersiz Açıklaması */}
+          {selectedType?.description && (
+            <View style={styles.typeDescriptionBox}>
+              <Ionicons name="information-circle-outline" size={16} color="#4FC3F7" />
+              <Text style={styles.typeDescriptionText}>{selectedType.description}</Text>
+            </View>
+          )}
 
           {/* Miktar girişi */}
           <Text style={styles.sectionLabel}>{selectedType?.unitLabel} (yaklaşık yakılan kalori)</Text>
@@ -242,6 +252,24 @@ const styles = StyleSheet.create({
   typeChipTextActive: {
     color: '#fff',
     fontWeight: '600',
+  },
+  typeDescriptionBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(79, 195, 247, 0.1)',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 195, 247, 0.2)',
+    gap: 10,
+  },
+  typeDescriptionText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#9ca3af',
+    lineHeight: 18,
   },
   inputRow: {
     flexDirection: 'row',

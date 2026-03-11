@@ -1,16 +1,154 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { auth } from '../config/firebase';
+import { updateUserProfile, getUserData } from '../services/authService';
+import { useAlert } from '../context/AlertContext';
+import { addDietReview, getDietReviews } from '../services/dietService';
 
 export default function DietDetailScreen({ route, navigation }) {
   const { diet } = route.params || {};
+  const { showAlert } = useAlert();
+  const [applying, setApplying] = useState(false);
+  const [isActive, setIsActive] = useState(false);
+  const [loadingUser, setLoadingUser] = useState(true);
+
+  // Puanlama ve Yorum States
+  const [reviews, setReviews] = useState([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [userRating, setUserRating] = useState(5);
+  const [userComment, setUserComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  useEffect(() => {
+    checkIfActive();
+    loadReviews();
+  }, []);
+
+  const loadReviews = async () => {
+    setLoadingReviews(true);
+    const result = await getDietReviews(diet.id);
+    if (result.success) {
+      setReviews(result.reviews);
+    }
+    setLoadingReviews(false);
+  };
+
+  const handleSubmitReview = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      showAlert('Hata', 'Yorum yapmak için giriş yapmalısınız.');
+      return;
+    }
+
+    if (!userComment.trim()) {
+      showAlert('Uyarı', 'Lütfen bir yorum yazın.');
+      return;
+    }
+
+    setSubmittingReview(true);
+    try {
+      const result = await addDietReview(
+        diet.id,
+        user.uid,
+        user.displayName || 'Anonim',
+        userRating,
+        userComment
+      );
+
+      if (result.success) {
+        setModalVisible(false);
+        setUserComment('');
+        setUserRating(5);
+        showAlert('Başarılı', 'Yorumun için teşekkürler!');
+        loadReviews(); // Refresh
+      } else {
+        showAlert('Hata', 'Yorum gönderilemedi.');
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const checkIfActive = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const result = await getUserData(user.uid);
+      if (result.success && result.data.activeDietId === diet.id) {
+        setIsActive(true);
+      }
+    } catch (e) {
+      console.log('User check error:', e);
+    } finally {
+      setLoadingUser(false);
+    }
+  };
+
+  const handleRemoveDiet = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    setApplying(true);
+    try {
+      const result = await updateUserProfile(user.uid, {
+        activeDietId: null,
+        activeDietName: null,
+      });
+
+      if (result.success) {
+        setIsActive(false);
+        showAlert('Bilgi', 'Diyet takibi durduruldu. Hedeflerin eski haline dönecek.', [
+          { text: 'Tamam', onPress: () => navigation.navigate('MainTabs', { screen: 'Dashboard' }) }
+        ]);
+      }
+    } catch (error) {
+      showAlert('Hata', 'İşlem başarısız oldu.');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleApplyDiet = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    setApplying(true);
+    try {
+      const result = await updateUserProfile(user.uid, {
+        activeDietId: diet.id,
+        activeDietName: diet.name,
+      });
+
+      if (result.success) {
+        showAlert('Başarılı', `"${diet.name}" artık aktif diyetin olarak belirlendi. Günlük kalori hedefin buna göre güncellenecek.`, [
+          { text: 'Harika!', onPress: () => navigation.navigate('MainTabs', { screen: 'Dashboard' }) }
+        ]);
+      } else {
+        showAlert('Hata', 'Diyet uygulanırken bir sorun oluştu.');
+      }
+    } catch (error) {
+      console.error('Diyet uygulama hatası:', error);
+      showAlert('Hata', 'Beklenmedik bir hata oluştu.');
+    } finally {
+      setApplying(false);
+    }
+  };
 
   if (!diet) {
     return (
@@ -46,6 +184,23 @@ export default function DietDetailScreen({ route, navigation }) {
               <Text style={styles.heroIcon}>{diet.icon}</Text>
             </View>
             <Text style={styles.calorieRange}>{diet.calorieRange}</Text>
+
+            <View style={styles.ratingRow}>
+              <View style={styles.stars}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Ionicons
+                    key={s}
+                    name={s <= Math.floor(diet.rating) ? "star" : s - 0.5 <= diet.rating ? "star-half" : "star-outline"}
+                    size={16}
+                    color="#FFD700"
+                  />
+                ))}
+              </View>
+              <Text style={styles.ratingValue}>{diet.rating}</Text>
+              <Text style={styles.dot}>•</Text>
+              <Text style={styles.reviewCount}>{diet.reviews} yorum</Text>
+            </View>
+
             <View style={styles.tagRow}>
               {diet.tags.map((tag) => (
                 <View key={tag} style={styles.tag}>
@@ -105,8 +260,139 @@ export default function DietDetailScreen({ route, navigation }) {
             </Section>
           )}
 
+          <Section title="Kullanıcı Deneyimleri">
+            <View style={styles.ratingSummary}>
+              <View style={styles.ratingLarge}>
+                <Text style={styles.ratingNum}>{diet.rating}</Text>
+                <Text style={styles.ratingTotal}>/ 5</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.rateButton}
+                onPress={() => setModalVisible(true)}
+              >
+                <Text style={styles.rateButtonIcon}>🌟</Text>
+                <Text style={styles.rateButtonText}>Puan Ver & Yorum Yap</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingReviews ? (
+              <ActivityIndicator color="#4FC3F7" />
+            ) : reviews.length === 0 ? (
+              <Text style={styles.noReviews}>Henüz yorum yapılmamış. İlk yorumu sen yap!</Text>
+            ) : (
+              reviews.map((rev) => (
+                <View key={rev.id} style={styles.commentCard}>
+                  <View style={styles.commentHeader}>
+                    <Text style={styles.commentUser}>{rev.userName}</Text>
+                    <View style={styles.commentStars}>
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Ionicons
+                          key={s}
+                          name={s <= rev.rating ? "star" : "star-outline"}
+                          size={12}
+                          color="#FFD700"
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={styles.commentText}>{rev.comment}</Text>
+                </View>
+              ))
+            )}
+          </Section>
+
+          {isActive ? (
+            <TouchableOpacity
+              style={[styles.removeButton, applying && styles.buttonDisabled]}
+              onPress={handleRemoveDiet}
+              disabled={applying}
+              activeOpacity={0.8}
+            >
+              {applying ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.applyButtonIcon}>👋</Text>
+                  <Text style={styles.applyButtonText}>Bu Diyeti Bırak</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.applyButton, applying && styles.buttonDisabled]}
+              onPress={handleApplyDiet}
+              disabled={applying || loadingUser}
+              activeOpacity={0.8}
+            >
+              {applying ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Text style={styles.applyButtonIcon}>✨</Text>
+                  <Text style={styles.applyButtonText}>Bu Diyeti Uygula</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
           <View style={styles.bottomSpacer} />
         </ScrollView>
+
+        {/* Puan Verme Modalı */}
+        <Modal
+          visible={modalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={styles.modalContent}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Diyeti Puanla</Text>
+                <TouchableOpacity onPress={() => setModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#9ca3af" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.ratingPicker}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <TouchableOpacity key={s} onPress={() => setUserRating(s)}>
+                    <Ionicons
+                      name={s <= userRating ? "star" : "star-outline"}
+                      size={36}
+                      color="#FFD700"
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Deneyiminizi paylaşın..."
+                placeholderTextColor="#6b7280"
+                multiline
+                numberOfLines={4}
+                value={userComment}
+                onChangeText={setUserComment}
+              />
+
+              <TouchableOpacity
+                style={[styles.submitButton, submittingReview && styles.buttonDisabled]}
+                onPress={handleSubmitReview}
+                disabled={submittingReview}
+              >
+                {submittingReview ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Yorumu Gönder</Text>
+                )}
+              </TouchableOpacity>
+            </KeyboardAvoidingView>
+          </View>
+        </Modal>
       </View>
     </>
   );
@@ -288,6 +574,207 @@ const styles = StyleSheet.create({
     color: '#e5e7eb',
   },
   bottomSpacer: {
-    height: 32,
+    height: 40,
+  },
+  applyButton: {
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginTop: 10,
+    marginBottom: 10,
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  applyButtonIcon: {
+    fontSize: 20,
+    marginRight: 10,
+  },
+  applyButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  removeButton: {
+    backgroundColor: '#dc2626',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginTop: 10,
+    marginBottom: 10,
+    shadowColor: '#dc2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  stars: {
+    flexDirection: 'row',
+    marginRight: 8,
+  },
+  ratingValue: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dot: {
+    color: '#4b5563',
+    marginHorizontal: 8,
+    fontSize: 16,
+  },
+  reviewCount: {
+    color: '#9ca3af',
+    fontSize: 14,
+  },
+  ratingSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#252542',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  ratingLarge: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  ratingNum: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  ratingTotal: {
+    fontSize: 16,
+    color: '#9ca3af',
+    marginLeft: 4,
+  },
+  rateButton: {
+    backgroundColor: 'rgba(79, 195, 247, 0.2)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(79, 195, 247, 0.4)',
+    shadowColor: '#4FC3F7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  rateButtonIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  rateButtonText: {
+    color: '#4FC3F7',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  commentCard: {
+    backgroundColor: '#252542',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  commentUser: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  commentStars: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  commentText: {
+    color: '#d1d5db',
+    fontSize: 14,
+    lineHeight: 20,
+    fontStyle: 'italic',
+  },
+  noReviews: {
+    color: '#9ca3af',
+    fontSize: 14,
+    textAlign: 'center',
+    marginVertical: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a2e',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    minHeight: 400,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  ratingPicker: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 24,
+  },
+  commentInput: {
+    backgroundColor: '#252542',
+    borderRadius: 16,
+    padding: 16,
+    color: '#fff',
+    fontSize: 16,
+    textAlignVertical: 'top',
+    height: 120,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#2a3447',
+  },
+  submitButton: {
+    backgroundColor: '#4FC3F7',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#4FC3F7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

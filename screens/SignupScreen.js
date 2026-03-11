@@ -8,9 +8,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
   ActivityIndicator
 } from 'react-native';
+import { useAlert } from '../context/AlertContext';
 import { StatusBar } from 'expo-status-bar';
 import { signUpWithEmail, getUserData } from '../services/authService';
 
@@ -20,6 +20,7 @@ import { signUpWithEmail, getUserData } from '../services/authService';
 
 
 export default function SignupScreen({ navigation }) {
+  const { showAlert } = useAlert();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,17 +35,17 @@ export default function SignupScreen({ navigation }) {
     const passwordTrim = (password || '').trim();
     const confirmTrim = (confirmPassword || '').trim();
     if (!nameTrim || !emailTrim || !passwordTrim || !confirmTrim) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Ad, e-posta, şifre ve şifre tekrarı alanlarını doldurun. Boş bırakamazsınız.');
+      showAlert('Girdinizi Kontrol Edin', 'Ad, e-posta, şifre ve şifre tekrarı alanlarını doldurun. Boş bırakamazsınız.');
       return;
     }
 
     if (passwordTrim !== confirmTrim) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Şifre ve şifre tekrarı aynı olmalıdır.');
+      showAlert('Girdinizi Kontrol Edin', 'Şifre ve şifre tekrarı aynı olmalıdır.');
       return;
     }
 
     if (passwordTrim.length < 6) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Şifre en az 6 karakter olmalıdır.');
+      showAlert('Girdinizi Kontrol Edin', 'Şifre en az 6 karakter olmalıdır.');
       return;
     }
 
@@ -56,7 +57,7 @@ export default function SignupScreen({ navigation }) {
       // Onboarding ekranına yönlendir
       navigation.navigate('Onboarding');
     } else {
-      Alert.alert('Hata', result.error);
+      showAlert('Hata', result.error);
     }
   };
 

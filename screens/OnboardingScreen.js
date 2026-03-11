@@ -6,25 +6,26 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   Platform,
-  Alert,
 } from 'react-native';
+import { useAlert } from '../context/AlertContext';
 import { StatusBar } from 'expo-status-bar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { updateUserProfile } from '../services/authService';
 import { Ionicons } from '@expo/vector-icons';
 import { auth } from '../config/firebase';
 import { allowOnlyNumbers, allowNumbersAndOneDecimal } from '../utils/validation';
+import { scheduleMealNotifications } from '../services/notificationService';
 
 export default function OnboardingScreen({ navigation }) {
+  const { showAlert } = useAlert();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedTimeIndex, setSelectedTimeIndex] = useState(null);
-  
+
   // Kullanıcı verileri
   const [userData, setUserData] = useState({
     gender: '', // male, female
@@ -54,12 +55,12 @@ export default function OnboardingScreen({ navigation }) {
     const defaultTimes = [];
     const startHour = 8; // Sabah 8'den başla
     const interval = Math.floor(12 / count); // Gün içinde eşit aralıkla dağıt
-    
+
     for (let i = 0; i < count; i++) {
       const hour = startHour + (interval * i);
       defaultTimes.push(`${hour.toString().padStart(2, '0')}:00`);
     }
-    
+
     // Her ikisini aynı anda güncelle
     setUserData({
       ...userData,
@@ -92,16 +93,33 @@ export default function OnboardingScreen({ navigation }) {
     const h = (userData.height || '').trim();
     const w = (userData.weight || '').trim();
     const b = (userData.birthDate || '').trim();
-    if (step === 1 && (!userData.gender || !h || !w || !b)) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen cinsiyet, boy, kilo ve doğum tarihi alanlarını doldurun. Boş bırakamazsınız.');
-      return;
+    if (step === 1) {
+      if (!userData.gender || !h || !w || !b) {
+        showAlert('Girdinizi Kontrol Edin', 'Lütfen cinsiyet, boy, kilo ve doğum tarihi alanlarını doldurun. Boş bırakamazsınız.');
+        return;
+      }
+
+      // Boy/Kilo mantıksal kontrolü
+      const heightNum = parseInt(h);
+      const weightNum = parseFloat(w);
+
+      if (heightNum < 50 || heightNum > 250) {
+        showAlert('Hatalı Boy Girişi', 'Lütfen 50 cm ile 250 cm arasında geçerli bir boy giriniz.');
+        return;
+      }
+
+      if (weightNum < 20 || weightNum > 650) {
+        showAlert('Hatalı Kilo Girişi', 'Lütfen 20 kg ile 650 kg arasında geçerli bir kilo giriniz.');
+        return;
+      }
     }
+
     if (step === 2 && (!userData.mealsPerDay || userData.mealTimes.length === 0)) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen günlük öğün sayısını seçin.');
+      showAlert('Girdinizi Kontrol Edin', 'Lütfen günlük öğün sayısını seçin.');
       return;
     }
     if (step === 3 && !userData.goal) {
-      Alert.alert('Girdinizi Kontrol Edin', 'Lütfen bir hedef seçin (kilo ver, koru veya kilo al).');
+      showAlert('Girdinizi Kontrol Edin', 'Lütfen bir hedef seçin (kilo ver, koru veya kilo al).');
       return;
     }
 
@@ -120,7 +138,7 @@ export default function OnboardingScreen({ navigation }) {
 
   const handleComplete = async () => {
     setLoading(true);
-    
+
     try {
       const currentUser = auth.currentUser;
       if (!currentUser || !currentUser.uid) {
@@ -141,6 +159,14 @@ export default function OnboardingScreen({ navigation }) {
 
       if (result.success) {
         console.log('✅ Onboarding tamamlandı! Profil oluşturuldu.');
+
+        // Bildirimleri planla
+        try {
+          await scheduleMealNotifications(userData.mealTimes);
+        } catch (notifError) {
+          console.log('Onboarding bildirim planlama hatası:', notifError);
+        }
+
         navigation.replace('MainTabs');
       } else {
         throw new Error(result.error || 'Profil kaydedilemedi');
@@ -385,17 +411,17 @@ export default function OnboardingScreen({ navigation }) {
                 <Text style={styles.summaryLabel}>Günlük Öğün:</Text>
                 <Text style={styles.summaryValue}>{userData.mealsPerDay}</Text>
               </View>
-              <View style={styles.summaryRow}>
+              <View style={[styles.summaryRow, { alignItems: 'flex-start' }]}>
                 <Text style={styles.summaryLabel}>Öğün Saatleri:</Text>
-                <Text style={styles.summaryValue}>
+                <Text style={[styles.summaryValue, { flex: 1, textAlign: 'right', marginLeft: 10 }]}>
                   {userData.mealTimes.join(', ')}
                 </Text>
               </View>
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>Hedef:</Text>
                 <Text style={styles.summaryValue}>
-                  {userData.goal === 'lose' ? 'Kilo Vermek' : 
-                   userData.goal === 'gain' ? 'Kilo Almak' : 'Kilomu Korumak'}
+                  {userData.goal === 'lose' ? 'Kilo Vermek' :
+                    userData.goal === 'gain' ? 'Kilo Almak' : 'Kilomu Korumak'}
                 </Text>
               </View>
             </View>
@@ -409,7 +435,7 @@ export default function OnboardingScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >

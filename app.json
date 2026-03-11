@@ -50,7 +50,15 @@
           "cameraPermission": "CaloCam'in barkod okutmak için kameraya erişmesine izin ver."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/caloicon.png",
+          "color": "#4CAF50"
+        }
+      ]
     ],
     "extra": {
       "eas": {
