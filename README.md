@@ -198,11 +198,8 @@ Bu proje **MIT** lisansı ile korunmaktadır. Daha fazla bilgi için [LICENSE](L
 
 <table border="0">
   <tr>
-    <td width="100">
-      <img src="https://github.com/SeAkman0.png" width="80" style="border-radius: 50%;" />
-    </td>
     <td>
-      <strong>SeAkman (Samie)</strong><br />
+      <strong>SeAkman</strong><br />
       <em>Bilgisayar Programcılığı Öğrencisi</em><br />
       <a href="https://github.com/SeAkman0">
         <img src="https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white" />
