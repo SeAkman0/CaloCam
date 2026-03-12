@@ -216,6 +216,8 @@ export default function CreateReadyMealScreen({ navigation }) {
                     setFoodItems(prev => prev.map(f => f.id === itemId ? { ...f, querying: false } : f));
                     setCustomAlert({ visible: true, title: 'Kota Doldu', message: 'Kota doldu daha sonra tekrar deneyin' });
                     return;
+                } else if (recipeResult.error) {
+                    setCustomAlert({ visible: true, title: 'Hata', message: recipeResult.error });
                 }
                 if (grams) {
                     const englishName = translateFoodName(nameStr);
@@ -353,6 +355,8 @@ export default function CreateReadyMealScreen({ navigation }) {
                         } else {
                             if (recipeResult.isQuotaError) {
                                 setCustomAlert({ visible: true, title: 'Kota Doldu', message: 'Kota doldu daha sonra tekrar deneyin' });
+                            } else if (recipeResult.error) {
+                                setCustomAlert({ visible: true, title: 'Uyarı', message: `${foodName} için analiz başarısız: ${recipeResult.error}` });
                             }
                             newFoodItems.push({
                                 id: food.id || String(Date.now() + Math.random()), name: foodName,
@@ -381,7 +385,7 @@ export default function CreateReadyMealScreen({ navigation }) {
                 if (result.isQuotaError) {
                     setCustomAlert({ visible: true, title: 'Kota Doldu', message: 'Kota doldu daha sonra tekrar deneyin' });
                 } else {
-                    setCustomAlert({ visible: true, title: 'Uyarı', message: 'Resimden yiyecek tespit edilemedi.' });
+                    setCustomAlert({ visible: true, title: 'Analiz Başarısız', message: result.error || 'Resimden yiyecek tespit edilemedi.' });
                 }
             }
         } catch (error) {

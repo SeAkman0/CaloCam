@@ -286,6 +286,8 @@ export default function AddMealScreen({ navigation }) {
             f.id === itemId ? { ...f, querying: false } : f
           ));
           return;
+        } else if (recipeResult.error) {
+          showAlert('Hata', recipeResult.error);
         }
         
         // USDA'dan dene (gramaj varsa)
@@ -550,6 +552,8 @@ export default function AddMealScreen({ navigation }) {
               console.log(`⚠️ "${foodName}" için malzeme analizi yapılamadı, orijinal veriler kullanılıyor`);
               if (recipeResult.isQuotaError) {
                 showAlert('Kota Doldu', 'Kota doldu daha sonra tekrar deneyin');
+              } else if (recipeResult.error) {
+                showAlert('Uyarı', `${foodName} için analiz başarısız: ${recipeResult.error}`);
               }
               newFoodItems.push({
                 id: food.id || String(Date.now() + Math.random()),
@@ -613,6 +617,8 @@ export default function AddMealScreen({ navigation }) {
         console.log('❌ Analiz Başarısız:', errorMessage);
         if (result.isQuotaError) {
           showAlert('Kota Doldu', 'Kota doldu daha sonra tekrar deneyin');
+        } else {
+          showAlert('Analiz Başarısız', errorMessage);
         }
       }
     } catch (error) {
