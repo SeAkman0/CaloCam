@@ -279,7 +279,16 @@ export default function AddMealScreen({ navigation }) {
           console.log(`═══════════════════════════════════════\n`);
         }
       } else {
-        // AI tarif analizi başarısız olduysa, USDA'dan dene (gramaj varsa)
+        // AI tarif analizi başarısız olduysa
+        if (recipeResult.isQuotaError) {
+          showAlert('Kota Doldu', 'Kota doldu daha sonra tekrar deneyin');
+          setFoodItems(prev => prev.map(f =>
+            f.id === itemId ? { ...f, querying: false } : f
+          ));
+          return;
+        }
+        
+        // USDA'dan dene (gramaj varsa)
         if (grams) {
           console.log(`⚠️ AI tarif analizi başarısız, USDA'dan sorgulanıyor...`);
           const englishName = translateFoodName(nameStr);
@@ -539,6 +548,9 @@ export default function AddMealScreen({ navigation }) {
             } else {
               // AI tarif analizi başarısız - orijinal verileri kullan
               console.log(`⚠️ "${foodName}" için malzeme analizi yapılamadı, orijinal veriler kullanılıyor`);
+              if (recipeResult.isQuotaError) {
+                showAlert('Kota Doldu', 'Kota doldu daha sonra tekrar deneyin');
+              }
               newFoodItems.push({
                 id: food.id || String(Date.now() + Math.random()),
                 name: foodName,
@@ -552,6 +564,10 @@ export default function AddMealScreen({ navigation }) {
                 ingredients: null,
                 showIngredients: false,
               });
+              
+              if (recipeResult.isQuotaError) {
+                break;
+              }
             }
           } catch (recipeError) {
             console.error(`❌ "${foodName}" malzeme analizi hatası:`, recipeError.message);
@@ -595,6 +611,9 @@ export default function AddMealScreen({ navigation }) {
       } else {
         const errorMessage = result.error || 'Yiyecek tespit edilemedi. Manuel olarak ekleyebilirsin.';
         console.log('❌ Analiz Başarısız:', errorMessage);
+        if (result.isQuotaError) {
+          showAlert('Kota Doldu', 'Kota doldu daha sonra tekrar deneyin');
+        }
       }
     } catch (error) {
       console.error('❌ Görüntü analiz hatası:', error);

@@ -81,6 +81,9 @@ Sadece listeyi ver, açıklama ekleme. Her satır bir yemek olsun.`;
     );
 
     if (!response.ok) {
+      if (response.status === 429) {
+        return { success: false, error: 'Kota doldu daha sonra tekrar deneyin', isQuotaError: true };
+      }
       const errorData = await response.json();
       throw new Error(errorData.error?.message || 'Gemini API hatası');
     }
@@ -105,9 +108,14 @@ Sadece listeyi ver, açıklama ekleme. Her satır bir yemek olsun.`;
     };
   } catch (error) {
     console.error('Gemini Vision API hatası:', error);
+    const isQuotaError = error.message.includes('429') || 
+                         error.message.toLowerCase().includes('quota') || 
+                         error.message.toLowerCase().includes('rate limit');
+    
     return {
       success: false,
-      error: error.message,
+      error: isQuotaError ? 'Kota doldu daha sonra tekrar deneyin' : error.message,
+      isQuotaError
     };
   }
 };

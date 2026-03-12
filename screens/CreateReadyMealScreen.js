@@ -212,6 +212,11 @@ export default function CreateReadyMealScreen({ navigation }) {
                     } : f));
                 }
             } else {
+                if (recipeResult.isQuotaError) {
+                    setFoodItems(prev => prev.map(f => f.id === itemId ? { ...f, querying: false } : f));
+                    setCustomAlert({ visible: true, title: 'Kota Doldu', message: 'Kota doldu daha sonra tekrar deneyin' });
+                    return;
+                }
                 if (grams) {
                     const englishName = translateFoodName(nameStr);
                     const result = await searchFoodInUSDA(englishName);
@@ -346,6 +351,9 @@ export default function CreateReadyMealScreen({ navigation }) {
                                 });
                             }
                         } else {
+                            if (recipeResult.isQuotaError) {
+                                setCustomAlert({ visible: true, title: 'Kota Doldu', message: 'Kota doldu daha sonra tekrar deneyin' });
+                            }
                             newFoodItems.push({
                                 id: food.id || String(Date.now() + Math.random()), name: foodName,
                                 portion: food.portion || '', calories: food.calories.toString(),
@@ -353,6 +361,7 @@ export default function CreateReadyMealScreen({ navigation }) {
                                 fat: food.fat ? food.fat.toString() : '', querying: false, photoId,
                                 ingredients: null, showIngredients: false
                             });
+                            if (recipeResult.isQuotaError) break;
                         }
                     } catch (e) {
                         newFoodItems.push({
@@ -369,7 +378,11 @@ export default function CreateReadyMealScreen({ navigation }) {
                     else { setFoodItems(newFoodItems); }
                 }
             } else {
-                setCustomAlert({ visible: true, title: 'Uyarı', message: 'Resimden yiyecek tespit edilemedi.' });
+                if (result.isQuotaError) {
+                    setCustomAlert({ visible: true, title: 'Kota Doldu', message: 'Kota doldu daha sonra tekrar deneyin' });
+                } else {
+                    setCustomAlert({ visible: true, title: 'Uyarı', message: 'Resimden yiyecek tespit edilemedi.' });
+                }
             }
         } catch (error) {
             console.error('Analiz hatası:', error);

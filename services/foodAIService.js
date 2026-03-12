@@ -72,7 +72,8 @@ export const analyzeFoodImage = async (imageUri) => {
     if (!geminiResult.success) {
       return {
         success: false,
-        error: `Gemini Vision hatası: ${geminiResult.error || 'Analiz edilemedi'}`,
+        error: geminiResult.isQuotaError ? 'Kota doldu daha sonra tekrar deneyin' : `Gemini Vision hatası: ${geminiResult.error || 'Analiz edilemedi'}`,
+        isQuotaError: geminiResult.isQuotaError,
         foods: [],
       };
     }
@@ -157,9 +158,14 @@ export const analyzeFoodImage = async (imageUri) => {
   } catch (error) {
     console.error('❌ AI analiz hatası:', error);
 
+    const isQuotaError = error.message.includes('429') || 
+                         error.message.toLowerCase().includes('quota') || 
+                         error.message.toLowerCase().includes('rate limit');
+
     return {
       success: false,
-      error: `Analiz hatası: ${error.message}`,
+      error: isQuotaError ? 'Kota doldu daha sonra tekrar deneyin' : `Analiz hatası: ${error.message}`,
+      isQuotaError,
       foods: [],
     };
   }
@@ -330,6 +336,9 @@ Biber Salçası|${Math.round(exampleGrams * 0.03)}|${Math.round(exampleGrams * 0
     }
 
     if (!response || !response.ok) {
+      if (response && response.status === 429) {
+        throw new Error('QUOTA_EXCEEDED');
+      }
       throw new Error(lastError || 'Gemini API\'ye bağlanılamadı');
     }
 
@@ -434,7 +443,15 @@ Biber Salçası|${Math.round(exampleGrams * 0.03)}|${Math.round(exampleGrams * 0
     };
   } catch (error) {
     console.error('❌ AI tarif analizi hatası:', error);
-    return { success: false, error: error.message };
+    const isQuotaError = error.message === 'QUOTA_EXCEEDED' || 
+                         error.message.includes('429') || 
+                         error.message.toLowerCase().includes('quota') || 
+                         error.message.toLowerCase().includes('rate limit');
+    return { 
+      success: false, 
+      error: isQuotaError ? 'Kota doldu daha sonra tekrar deneyin' : error.message,
+      isQuotaError
+    };
   }
 };
 
