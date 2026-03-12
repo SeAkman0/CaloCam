@@ -16,6 +16,9 @@ Modern ve kullanıcı dostu bir kalori takip uygulaması. React Native (Expo) ve
 - ✅ AI destekli yemek kalori tespiti
 - ✅ Barkod okuyucu ve USDA veritabanı entegrasyonu
 - ✅ Gelişmiş kalori, makro ve su takibi
+- ✅ Diyet listeleri ve hazır öğün planlama
+- ✅ Günlük egzersiz takibi
+- ✅ Profil fotoğrafı yükleme ve hesap yönetimi
 
 ## 📸 Ekran Görüntüleri
 
@@ -23,7 +26,7 @@ Modern ve kullanıcı dostu bir kalori takip uygulaması. React Native (Expo) ve
   <table>
     <tr>
       <td align="center">
-        <b>Hoş Gedin / Açılış</b><br/>
+        <b>Hoş Geldin / Açılış</b><br/>
         <img src="screenshots/açılış ekranı.png" width="200"/>
       </td>
       <td align="center">
@@ -176,7 +179,7 @@ CaloCam/
 ## 🔐 Güvenlik
 
 - Firebase config dosyası `.gitignore`'a eklenmiştir
-- Firestore kuralları ile her kullanıcı sadece kendi verilerine erişebilir
+- Firestore veritabanı kuralları ile kullanıcıların kişisel hesap ve sağlık verileri (öğünler, su, egzersiz) sadece kendilerine özel tutulmuştur. Ancak, tüm kullanıcıların faydalanabilmesi için genel veya hazır diyet listeleri gibi ortak verilere herkesin okuma izni bulunmaktadır.
 - Şifreler Firebase Authentication tarafından güvenli şekilde saklanır
 
 ## 🛠️ Teknolojiler
