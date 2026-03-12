@@ -13,7 +13,72 @@ Modern ve kullanıcı dostu bir kalori takip uygulaması. React Native (Expo) ve
 - ✅ Firebase Authentication entegrasyonu
 - ✅ Firestore veritabanı entegrasyonu
 - ✅ Kullanıcı verilerinin güvenli saklanması
+- ✅ AI destekli yemek kalori tespiti
+- ✅ Barkod okuyucu ve USDA veritabanı entegrasyonu
+- ✅ Gelişmiş kalori, makro ve su takibi
 
+## 📸 Ekran Görüntüleri
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <b>Hoş Gedin / Açılış</b><br/>
+        <img src="screenshots/açılış ekranı.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>Ana Sayfa</b><br/>
+        <img src="screenshots/ana sayfa.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>Ana Sayfa (Alternatif)</b><br/>
+        <img src="screenshots/ana sayfa2.png" width="200"/>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <b>Öğün Ekle (AI & Barkod)</b><br/>
+        <img src="screenshots/öğün ekle.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>AI Kalori Detayları</b><br/>
+        <img src="screenshots/yiyecek kalori detayları.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>AI Kalori Detayları 2</b><br/>
+        <img src="screenshots/yiyecek kalori detayları2.png" width="200"/>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <b>Hazır Öğünler</b><br/>
+        <img src="screenshots/hazır öğünler.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>Diyet Listeleri</b><br/>
+        <img src="screenshots/diyet listeleri.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>Egzersiz Takibi</b><br/>
+        <img src="screenshots/egzersiz.png" width="200"/>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <b>İstatistikler (Günlük)</b><br/>
+        <img src="screenshots/istatistikler.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>İstatistikler (Haftalık)</b><br/>
+        <img src="screenshots/istatistikler2.png" width="200"/>
+      </td>
+      <td align="center">
+        <b>Profil Ayarları</b><br/>
+        <img src="screenshots/profile.png" width="200"/>
+      </td>
+    </tr>
+  </table>
+</div>
 
 ## 🚀 Kurulum
 
