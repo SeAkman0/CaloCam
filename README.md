@@ -186,10 +186,34 @@ CaloCam/
 - **React Navigation** (Native Stack)
 - **Expo Vector Icons**
 
-## 📝 Lisans
+## ⚖️ Lisans
 
-Bu proje özel bir projedir.
+Bu proje **MIT** lisansı ile korunmaktadır. Daha fazla bilgi için [LICENSE](LICENSE) dosyasına göz atabilirsiniz.
+
+---
 
 ## 👨‍💻 Geliştirici
 
-CaloCam - 2026
+**CaloCam** projesi, kullanıcıların beslenme alışkanlıklarını kolayca takip edebilmesi için geliştirilmiştir.
+
+<table border="0">
+  <tr>
+    <td width="100">
+      <img src="https://github.com/SeAkman0.png" width="80" style="border-radius: 50%;" />
+    </td>
+    <td>
+      <strong>SeAkman (Samie)</strong><br />
+      <em>Bilgisayar Programcılığı Öğrencisi</em><br />
+      <a href="https://github.com/SeAkman0">
+        <img src="https://img.shields.io/badge/GitHub-181717?style=flat&logo=github&logoColor=white" />
+      </a>
+      <a href="https://www.linkedin.com/in/sami-eren-akman-559561299/">
+        <img src="https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white" />
+      </a>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <small>© 2026 CaloCam - Tüm hakları saklıdır.</small>
+</p>
