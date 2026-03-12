@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="screenshots/uygulama logosu.png" width="200" alt="CaloCam Logo" />
+</p>
+
 # 🍎 CaloCam - Kalori Takip Uygulaması
 
 Modern ve kullanıcı dostu bir kalori takip uygulaması. React Native (Expo) ve Firebase ile geliştirilmiştir.
