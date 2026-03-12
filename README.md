@@ -117,19 +117,48 @@ npx expo start --android
 
 ```
 CaloCam/
-├── screens/               # Ekranlar
-│   ├── WelcomeScreen.js  # Hoş geldin ekranı
-│   ├── LoginScreen.js    # Giriş ekranı
-│   └── SignupScreen.js   # Kayıt ekranı
-├── components/            # Tekrar kullanılabilir bileşenler
-│   └── GoogleIcon.js     # Google ikonu
-├── services/              # Servisler
-│   └── authService.js    # Authentication servisleri
-├── config/                # Yapılandırma dosyaları
-│   └── firebase.js       # Firebase config (GİZLİ!)
-├── App.js                # Ana uygulama ve navigation
-└── package.json          # Bağımlılıklar
-
+├── screens/               # Uygulama Ekranları
+│   ├── AddMealScreen.js
+│   ├── CreateReadyMealScreen.js
+│   ├── DashboardScreen.js
+│   ├── DietDetailScreen.js
+│   ├── DietListsScreen.js
+│   ├── ExerciseScreen.js
+│   ├── LoginScreen.js
+│   ├── MealDetailScreen.js
+│   ├── OnboardingScreen.js
+│   ├── ProfileScreen.js
+│   ├── SignupScreen.js
+│   ├── StatsScreen.js
+│   └── WelcomeScreen.js
+├── components/            # Tekrar Kullanılabilir Bileşenler
+│   ├── CustomAlert.js
+│   ├── GoogleIcon.js
+│   └── ReadyMealsModal.js
+├── services/              # API ve İş Mantığı Servisleri
+│   ├── authService.js
+│   ├── dietService.js
+│   ├── exerciseService.js
+│   ├── foodAIService.js
+│   ├── geminiVisionService.js
+│   ├── mealService.js
+│   ├── notificationService.js
+│   ├── openFoodFactsService.js
+│   ├── profilePhotoService.js
+│   ├── readyMealService.js
+│   ├── statsService.js
+│   ├── usdaFoodService.js
+│   └── waterService.js
+├── context/               # Global Context ve State Yönetimi
+│   └── AlertContext.js
+├── config/                # Yapılandırma Dosyaları
+│   └── firebase.js
+├── utils/                 # Yardımcı Fonksiyonlar ve Validasyonlar
+│   └── validation.js
+├── data/                  # Statik Veri Modelleri
+├── screenshots/           # Uygulama Ekran Görüntüleri
+├── App.js                 # Ana Uygulama ve Route (Navigation)
+└── package.json           # Proje Bağımlılıkları
 ```
 
 ## 🎨 Tasarım
